@@ -69,11 +69,15 @@ pub struct MainWindowHost {
     focused: Cell<bool>,
     focus_lost_at: Cell<Option<Instant>>,
     cards: Rc<VecModel<CardData>>,
+    on_shown: Box<dyn Fn()>,
 }
 
 impl MainWindowHost {
-    /// `on_refresh`：使用者按下視窗上的「立即刷新」
-    pub fn new(on_refresh: impl Fn() + 'static) -> Result<Rc<Self>, slint::PlatformError> {
+    /// `on_refresh`：使用者按下視窗上的「立即刷新」；`on_shown`：視窗從隱藏變為顯示
+    pub fn new(
+        on_refresh: impl Fn() + 'static,
+        on_shown: impl Fn() + 'static,
+    ) -> Result<Rc<Self>, slint::PlatformError> {
         let window = MainWindow::new()?;
         let cards = Rc::new(VecModel::default());
         window.set_cards(ModelRc::from(cards.clone()));
@@ -105,6 +109,7 @@ impl MainWindowHost {
                 focused: Cell::new(false),
                 focus_lost_at: Cell::default(),
                 cards,
+                on_shown: Box::new(on_shown),
             }
         }))
     }
@@ -133,6 +138,7 @@ impl MainWindowHost {
     }
 
     fn show(self: &Rc<Self>) {
+        let was_visible = self.window.window().is_visible();
         if !self.placed.replace(true)
             && let Some(pos) = initial_position()
         {
@@ -141,6 +147,9 @@ impl MainWindowHost {
         if let Err(e) = self.window.show() {
             eprintln!("[視窗] 顯示失敗：{e}");
             return;
+        }
+        if !was_visible {
+            (self.on_shown)();
         }
         let weak = Rc::downgrade(self);
         slint::Timer::single_shot(FOCUS_DELAY, move || {

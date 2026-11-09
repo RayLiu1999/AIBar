@@ -7,10 +7,9 @@ use chrono::{DateTime, Datelike, Local, Timelike, Weekday};
 use slint::{ModelRc, VecModel};
 
 use crate::model::{FetchFailure, ProviderStatus, Snapshot, UsageWindow};
+use crate::scheduler::REFRESH_INTERVAL;
 use crate::{CardData, UsageLevel, UsageRow};
 
-/// 背景刷新週期
-pub const REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
 /// 超過 3 個背景刷新週期即為舊快照
 pub const STALE_AFTER: Duration = Duration::from_secs(REFRESH_INTERVAL.as_secs() * 3);
 /// 顏色門檻：低於 70% 綠色、70% 至 90% 黃色、90% 以上紅色

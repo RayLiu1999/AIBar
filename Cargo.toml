@@ -4,8 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+base64 = "0.23.1"
 # 本地時區格式化重置時間
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
 # 只啟用需要的 feature：winit 後端 + 軟體渲染器 + 系統托盤
 slint = { version = "1.18.1", default-features = false, features = [
     "std",
@@ -16,6 +19,8 @@ slint = { version = "1.18.1", default-features = false, features = [
     "system-tray",
     "unstable-winit-030",
 ] }
+# 同步 HTTP；TLS 用 Windows 內建的 SChannel 與系統憑證，不另外打包根憑證
+ureq = { version = "3.5.1", default-features = false, features = ["native-tls-no-default", "gzip"] }
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
