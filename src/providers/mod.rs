@@ -22,6 +22,10 @@ pub trait UsageProvider: Send + Sync {
     /// 目前登入帳號的雜湊（只讀本機檔案，不連網）；讀不到時為 None。
     /// 用於啟動時判斷存下的快照是否屬於目前帳號。
     fn current_account_hash(&self) -> Option<String>;
+    /// 背景刷新間隔；端點限流較嚴的 Provider 可覆寫成更長
+    fn refresh_interval(&self) -> Duration {
+        crate::scheduler::DEFAULT_REFRESH_INTERVAL
+    }
     fn fetch(&self) -> Result<Snapshot, FetchFailure>;
 }
 

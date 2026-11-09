@@ -13,8 +13,10 @@ use crate::model::{FetchFailure, ProviderStatus, Snapshot};
 use crate::providers::UsageProvider;
 use crate::snapshot_store;
 
-/// 背景刷新週期
-pub const REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
+/// 預設背景刷新間隔（Provider 可覆寫，見 `UsageProvider::refresh_interval`）
+pub const DEFAULT_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
+/// 手動刷新的下限：同一 Provider 距上次送出未滿此時間就略過，避免連按觸發限流
+const MANUAL_MIN_GAP: Duration = Duration::from_secs(60);
 /// 429 退避上限
 const MAX_BACKOFF: Duration = Duration::from_secs(30 * 60);
 /// 排程器至少每隔這麼久醒來一次，以牆上時鐘檢查是否到期。
@@ -22,8 +24,10 @@ const MAX_BACKOFF: Duration = Duration::from_secs(30 * 60);
 const MAX_SLEEP: Duration = Duration::from_secs(60);
 
 enum Msg {
-    /// `force`：忽略退避（手動刷新）；`max_age`：快照比這新就略過（開啟視窗時）
-    Refresh { force: bool, max_age: Option<Duration> },
+    /// 手動刷新（忽略退避，但受 MANUAL_MIN_GAP 限制）
+    RefreshNow,
+    /// 開啟視窗：快照超過該 Provider 刷新間隔一半且不在退避中才刷新
+    RefreshOnShow,
     SetEnabled(Vec<&'static str>),
     Done(&'static str, Result<Snapshot, FetchFailure>),
 }
@@ -35,14 +39,15 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
-    /// 手動刷新：立刻刷新全部啟用的 Provider，不受退避限制
+    /// 手動刷新：立刻刷新全部啟用的 Provider，不受退避限制；
+    /// 但同一 Provider 1 分鐘內只送一次
     pub fn refresh_now(&self) {
-        let _ = self.tx.send(Msg::Refresh { force: true, max_age: None });
+        let _ = self.tx.send(Msg::RefreshNow);
     }
 
-    /// 刷新快照比 `max_age` 舊的 Provider（遵守退避）
-    pub fn refresh_if_older(&self, max_age: Duration) {
-        let _ = self.tx.send(Msg::Refresh { force: false, max_age: Some(max_age) });
+    /// 開啟視窗時：刷新快照超過該 Provider 刷新間隔一半的 Provider（遵守退避）
+    pub fn refresh_on_show(&self) {
+        let _ = self.tx.send(Msg::RefreshOnShow);
     }
 
     pub fn set_enabled(&self, ids: Vec<&'static str>) {
@@ -56,15 +61,25 @@ struct Slot {
     enabled: bool,
     /// 下次背景刷新時間（牆上時鐘）
     next_due: SystemTime,
-    /// 目前的刷新間隔；429 時加倍，成功後恢復
+    /// 此 Provider 的基本刷新間隔
+    base_interval: Duration,
+    /// 目前的刷新間隔；429 時加倍，成功後恢復為基本間隔
     interval: Duration,
     /// 退避中：此時間前不做自動刷新
     backoff_until: Option<SystemTime>,
+    /// 上次送出請求的時間
+    last_attempt: Option<SystemTime>,
 }
 
 impl Slot {
     fn in_backoff(&self, now: SystemTime) -> bool {
         self.backoff_until.is_some_and(|t| now < t)
+    }
+
+    /// 快照的年齡；沒有快照時為 None
+    fn snapshot_age(&self, now: SystemTime) -> Option<Duration> {
+        let fetched = self.status.snapshot.as_ref()?.fetched_at;
+        Some(now.duration_since(fetched).unwrap_or_default())
     }
 }
 
@@ -81,11 +96,12 @@ pub fn spawn(
     let slots = providers
         .into_iter()
         .map(|p| {
+            let interval = p.refresh_interval();
             let snapshot = snapshots.remove(p.id());
             let next_due = snapshot
                 .as_ref()
-                .map(|s| s.fetched_at + REFRESH_INTERVAL)
-                .filter(|due| *due > now && *due <= now + REFRESH_INTERVAL)
+                .map(|s| s.fetched_at + interval)
+                .filter(|due| *due > now && *due <= now + interval)
                 .unwrap_or(now);
             Slot {
                 status: ProviderStatus {
@@ -93,11 +109,14 @@ pub fn spawn(
                     snapshot,
                     last_failure: None,
                     refreshing: false,
+                    refresh_interval: interval,
                 },
                 enabled: enabled.contains(&p.id()),
                 next_due,
-                interval: REFRESH_INTERVAL,
+                base_interval: interval,
+                interval,
                 backoff_until: None,
+                last_attempt: None,
                 provider: p,
             }
         })
@@ -144,18 +163,24 @@ fn run(
             .min(MAX_SLEEP);
 
         match rx.recv_timeout(wait) {
-            Ok(Msg::Refresh { force, max_age }) => {
+            Ok(Msg::RefreshNow) => {
                 let now = SystemTime::now();
                 for slot in slots.iter_mut().filter(|s| s.enabled && !s.status.refreshing) {
-                    if !force && slot.in_backoff(now) {
-                        continue;
+                    let too_soon = slot
+                        .last_attempt
+                        .is_some_and(|t| now.duration_since(t).is_ok_and(|d| d < MANUAL_MIN_GAP));
+                    if !too_soon {
+                        start(slot, &tx);
                     }
-                    let fresh = max_age.is_some_and(|age| {
-                        slot.status.snapshot.as_ref().is_some_and(|sn| {
-                            now.duration_since(sn.fetched_at).is_ok_and(|d| d < age)
-                        })
-                    });
-                    if !fresh {
+                }
+                publish(&slots);
+            }
+            Ok(Msg::RefreshOnShow) => {
+                let now = SystemTime::now();
+                for slot in slots.iter_mut().filter(|s| s.enabled && !s.status.refreshing) {
+                    let fresh =
+                        slot.snapshot_age(now).is_some_and(|age| age < slot.base_interval / 2);
+                    if !slot.in_backoff(now) && !fresh {
                         start(slot, &tx);
                     }
                 }
@@ -195,6 +220,7 @@ fn run(
 /// 在新執行緒中抓取；同一 Provider 前一次尚未結束時不會呼叫到這裡
 fn start(slot: &mut Slot, tx: &Sender<Msg>) {
     slot.status.refreshing = true;
+    slot.last_attempt = Some(SystemTime::now());
     let provider = slot.provider.clone();
     let tx = tx.clone();
     thread::spawn(move || {
@@ -211,9 +237,9 @@ fn finish(slot: &mut Slot, result: Result<Snapshot, FetchFailure>) {
         Ok(snapshot) => {
             slot.status.snapshot = Some(snapshot);
             slot.status.last_failure = None;
-            slot.interval = REFRESH_INTERVAL;
+            slot.interval = slot.base_interval;
             slot.backoff_until = None;
-            slot.next_due = now + REFRESH_INTERVAL;
+            slot.next_due = now + slot.base_interval;
         }
         Err(FetchFailure::RateLimited { retry_at }) => {
             // 間隔加倍（上限 30 分鐘）；伺服器指定的 Retry-After 更晚時以它為準

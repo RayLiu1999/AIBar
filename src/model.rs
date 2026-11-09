@@ -54,4 +54,6 @@ pub struct ProviderStatus {
     /// 最近一次刷新成功時為 None
     pub last_failure: Option<FetchFailure>,
     pub refreshing: bool,
+    /// 此 Provider 的背景刷新間隔（各 Provider 可不同）
+    pub refresh_interval: std::time::Duration,
 }

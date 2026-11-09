@@ -7,11 +7,10 @@ use chrono::{DateTime, Datelike, Local, Timelike, Weekday};
 use slint::{Color, ModelRc, VecModel};
 
 use crate::model::{FetchFailure, ProviderStatus, Snapshot, UsageWindow};
-use crate::scheduler::REFRESH_INTERVAL;
 use crate::{CardData, UsageLevel, WindowRow};
 
-/// 超過 3 個背景刷新週期即為舊快照
-pub const STALE_AFTER: Duration = Duration::from_secs(REFRESH_INTERVAL.as_secs() * 3);
+/// 快照年齡超過此數個背景刷新間隔即為舊快照
+const STALE_CYCLES: u32 = 3;
 /// 剩餘低於此值為「偏低」（黃）
 const LOW_REMAINING: f64 = 30.0;
 /// 剩餘低於此值為「危急」（紅）
@@ -103,9 +102,14 @@ pub fn level_of(remaining: f64) -> UsageLevel {
     }
 }
 
-/// 舊快照：取得時間已超過 3 個背景刷新週期
-pub fn is_stale(s: &Snapshot, now: SystemTime) -> bool {
-    now.duration_since(s.fetched_at).is_ok_and(|d| d > STALE_AFTER)
+/// 舊快照：取得時間已超過該 Provider 的 3 個背景刷新間隔
+pub fn is_stale(s: &Snapshot, interval: Duration, now: SystemTime) -> bool {
+    now.duration_since(s.fetched_at).is_ok_and(|d| d > interval * STALE_CYCLES)
+}
+
+/// 刷新間隔的文字：「每 10 分鐘」
+fn interval_text(d: Duration) -> String {
+    format!("每 {} 分鐘", d.as_secs() / 60)
 }
 
 /// 剩餘最少的額度視窗與其剩餘百分比
@@ -290,9 +294,9 @@ pub fn card(s: &ProviderStatus, mode: DisplayMode, now: SystemTime) -> CardData 
         _ => "",
     };
     let next_refresh = snap
-        .and_then(|sn| (sn.fetched_at + REFRESH_INTERVAL).duration_since(now).ok())
-        .map(|d| format!("約 {}後（每 5 分鐘）", duration_text(d)))
-        .unwrap_or_else(|| "每 5 分鐘".into());
+        .and_then(|sn| (sn.fetched_at + s.refresh_interval).duration_since(now).ok())
+        .map(|d| format!("約 {}後（{}）", duration_text(d), interval_text(s.refresh_interval)))
+        .unwrap_or_else(|| interval_text(s.refresh_interval));
     CardData {
         id: s.provider_id.into(),
         name: meta.name.into(),
@@ -302,7 +306,7 @@ pub fn card(s: &ProviderStatus, mode: DisplayMode, now: SystemTime) -> CardData 
         rows: ModelRc::new(VecModel::from(rows)),
         has_snapshot: snap.is_some(),
         updated_text: snap.map(|sn| updated_text(sn.fetched_at, now)).unwrap_or_default().into(),
-        stale: snap.is_some_and(|sn| is_stale(sn, now)),
+        stale: snap.is_some_and(|sn| is_stale(sn, s.refresh_interval, now)),
         failure: s
             .last_failure
             .as_ref()
@@ -373,7 +377,7 @@ pub fn tray_view(
     let warn = focus.last_failure.as_ref().is_some_and(|f| !matches!(f, FetchFailure::NotRunning));
     let snap = focus.snapshot.as_ref();
     let top = snap.and_then(|s| tightest(s, now));
-    let stale = snap.is_none_or(|s| is_stale(s, now));
+    let stale = snap.is_none_or(|s| is_stale(s, focus.refresh_interval, now));
 
     let (text, fill) = match top {
         Some((_, r)) => (
@@ -463,7 +467,13 @@ mod tests {
     }
 
     fn status(id: &'static str, snap: Option<Snapshot>, fail: Option<FetchFailure>) -> ProviderStatus {
-        ProviderStatus { provider_id: id, snapshot: snap, last_failure: fail, refreshing: false }
+        ProviderStatus {
+            provider_id: id,
+            snapshot: snap,
+            last_failure: fail,
+            refreshing: false,
+            refresh_interval: Duration::from_secs(5 * 60),
+        }
     }
 
     #[test]

@@ -35,8 +35,6 @@ slint::include_modules!();
 
 /// 「更新於 N 分鐘前」與重置倒數的重新計算間隔
 const UI_TICK: Duration = Duration::from_secs(30);
-/// 開啟視窗時，快照比這舊就自動刷新。Claude 端點限流嚴格（相隔不到 1 分鐘就可能 429），不宜更短
-const SHOW_REFRESH_AGE: Duration = Duration::from_secs(2 * 60);
 /// 設定視窗的分頁
 const SETTINGS_PAGE_ABOUT: i32 = 2;
 
@@ -303,7 +301,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let window = MainWindowHost::new(
         cfg.window,
         with_app(|app| app.scheduler.refresh_now()),
-        with_app(|app| app.scheduler.refresh_if_older(SHOW_REFRESH_AGE)),
+        with_app(|app| app.scheduler.refresh_on_show()),
         |geometry| {
             with_app(move |app| {
                 app.config.borrow_mut().window = Some(geometry);
