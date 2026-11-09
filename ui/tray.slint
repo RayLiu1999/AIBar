@@ -1,0 +1,43 @@
+// 系統匣圖示與右鍵選單（原型：驗證點擊、選單、動態圖示與 Tooltip）
+export component Tray inherits SystemTrayIcon {
+    // 圖示由 Rust 端動態產生並設定
+    in property <image> tray-icon;
+    in property <string> tray-tooltip: "AIBar";
+    in-out property <bool> claude-enabled: true;
+    in-out property <bool> codex-enabled: true;
+
+    callback left-clicked();
+    callback refresh-now();
+    callback show-about();
+    callback quit();
+
+    icon: tray-icon;
+    tooltip: tray-tooltip;
+    clicked => { root.left-clicked(); }
+
+    Menu {
+        MenuItem {
+            title: "Claude";
+            checkable: true;
+            checked <=> root.claude-enabled;
+        }
+        MenuItem {
+            title: "Codex";
+            checkable: true;
+            checked <=> root.codex-enabled;
+        }
+        MenuSeparator {}
+        MenuItem {
+            title: "立即刷新";
+            activated => { root.refresh-now(); }
+        }
+        MenuItem {
+            title: "關於";
+            activated => { root.show-about(); }
+        }
+        MenuItem {
+            title: "結束";
+            activated => { root.quit(); }
+        }
+    }
+}

@@ -1,0 +1,47 @@
+// 彈出面板（原型：只驗證無邊框、置頂、定位與關閉行為）
+export component Panel inherits Window {
+    in property <string> info;
+
+    callback close-requested();
+
+    no-frame: true;
+    always-on-top: true;
+    width: 320px;
+    height: 160px;
+    background: #1f2430;
+
+    // 按 Esc 關閉面板
+    fs := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.close-requested();
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            padding: 16px;
+            spacing: 8px;
+            Text {
+                text: "AIBar 面板原型";
+                color: white;
+                font-size: 16px;
+                font-weight: 700;
+            }
+            Text {
+                text: root.info;
+                color: #c0c6d4;
+                wrap: word-wrap;
+            }
+            Text {
+                text: "按 Esc、點面板外、或再點一次托盤圖示關閉";
+                color: #7f8799;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+        }
+    }
+
+    init => { fs.focus(); }
+}

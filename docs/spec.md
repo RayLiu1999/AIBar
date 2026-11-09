@@ -51,7 +51,7 @@ Nov 9, 2026 · @Ray（2026-11-09 依規劃訪談結果修訂；名詞定義見�
 | 項目 | 選擇 | 理由 |
 | --- | --- | --- |
 | 語言 | Rust（stable） | 原生編譯、無 runtime，啟動快、記憶體低；也是開發者想接觸的新語言 |
-| UI | Slint 1.17 以上 | 宣告式 UI，內建 `SystemTrayIcon` 與 `Tooltip` 元素，Windows 上以 `Shell_NotifyIconW` 實作托盤，不需另外裝托盤套件 |
+| UI | Slint 1.18 以上 | 宣告式 UI，內建 `SystemTrayIcon` 與 `Tooltip` 元素，Windows 上以 `Shell_NotifyIconW` 實作托盤，不需另外裝托盤套件 |
 | HTTP | `ureq`（同步） | 每 5 分鐘只打少量請求，搭配背景執行緒即可，不引入 tokio，減少體積與複雜度 |
 | JSON | `serde` + `serde_json` | Rust 事實標準，設定檔、快照檔與 API 回應共用 |
 | Windows API | `windows` crate | DPAPI 加密、登錄檔（開機自啟）、行程探測（Antigravity） |
@@ -206,7 +206,8 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個點擊托盤時彈出的卡�
 
 - 左鍵點擊托盤圖示開啟，點擊面板外或按 Esc 關閉；再次點擊托盤圖示則切換開關。
 - 打開時，若某 Provider 的快照超過 30 秒且不在退避期間，自動刷新該 Provider。
-- 無邊框、置頂，出現在托盤所在螢幕的工作區右下角；若 Slint 能取得點擊座標則改為貼齊托盤（待驗證）。
+- 無邊框、置頂，以托盤圖示的實際位置為錨點：放在圖示朝螢幕內側的一邊（工作列在下時即圖示上方），沿工作列方向對齊圖示並限制在工作區內；圖示在「^」隱藏區時面板會避開圖示。Slint 的 `clicked` 不帶座標，故以 `Shell_NotifyIconGetRect` 取得圖示矩形（需找出 Slint 內部的 `SlintSystemTrayWindow` 隱藏視窗，uID 為 1），取不到時退回以游標位置定位。
+- 面板顯示後延遲約 30ms 以 `SetForegroundWindow` 取得前景焦點，Esc 與失焦關閉才會生效；點托盤圖示時面板會先失焦關閉，故關閉後 300ms 內的托盤點擊不重新開啟。
 - 每個 Provider 一張卡片：名稱、方案標籤（例如「Claude · Max 5x」）、各額度視窗一列（名稱、進度條、百分比、重置倒數）。
 - 重置倒數：24 小時內顯示相對時間（「2 時 13 分後重置」），超過 24 小時顯示日期時間（「11/12（四）14:59 重置」）。
 - 進度條顏色沿用托盤圖示的門檻（綠、黃、紅）。
@@ -350,7 +351,7 @@ AIBar/
 
 **專案重點**
 
-- 依賴：`slint`（需啟用系統托盤的 `system-tray` feature，以官方文件為準）、`slint-build`（build dependency）、`ureq`、`serde`、`serde_json`、`windows`。
+- 依賴：`slint`（關閉預設 feature，只啟用 `std`、`compat-1-2`、`accessibility`、`backend-winit`、`renderer-software`、`system-tray`、`unstable-winit-030`）、`slint-build`（build dependency）、`ureq`、`serde`、`serde_json`、`windows`。
 - 隱藏主控台視窗：`main.rs` 開頭加 `#![windows_subsystem = "windows"]`。
 - 單一執行個體：以具名 Mutex 防止重複啟動。
 - 執行緒模型：Slint UI 跑在主執行緒；排程器跑在背景執行緒，各 Provider 的請求在其中執行，結果透過 `slint::invoke_from_event_loop` 送回 UI 更新。
@@ -418,7 +419,7 @@ v0 先交付 Claude 與 Codex，其餘依序加入；六角形為進到下一階
 | Antigravity 本機探測屬實驗性做法 | 版本更新後可能失效 | 放在 v1，失效時顯示「未執行」或錯誤，不影響其他 Provider |
 | 帳號層級的使用規範 | 使用非公開端點可能不被官方支援 | 僅供個人或少數同事使用，低頻率輪詢 |
 | 首次使用 Rust，編譯錯誤與所有權概念需適應 | 開發時程可能超出預期 | 由 AI 撰寫、開發者逐檔閱讀；採用背景執行緒加 channel 的簡單並行模型，不引入 async runtime |
-| Slint 的系統托盤是 1.17 才加入的新功能，面板定位等細節可能不完整 | 面板無法貼近托盤 | 先做小範例驗證；不足時退回貼齊工作區右下角，或改用 tray-icon 套件 |
+| Slint 的系統托盤是 1.17 才加入的新功能；面板定位依賴 Slint 未公開的內部視窗類別名稱 | Slint 改版後面板無法貼近托盤 | 已以原型驗證（2026-11-09）；類別名稱失效時自動退回以游標位置定位 |
 
 **待驗證清單**
 
@@ -426,8 +427,8 @@ v0 先交付 Claude 與 Codex，其餘依序加入；六角形為進到下一階
 - [x] Claude 用量端點的路徑、必要 header 與回應欄位
 - [x] `%USERPROFILE%\.codex\auth.json` 的欄位名稱（token 與 account id）
 - [x] Codex 用量端點的路徑與回應欄位
-- [ ] Slint 托盤的點擊事件能否取得位置，用於面板定位
-- [ ] Slint 托盤能否偵測左鍵點擊與右鍵選單、能否動態更換圖示與 Tooltip
+- [x] Slint 托盤的點擊事件能否取得位置，用於面板定位（`clicked` 不帶座標，改用 `Shell_NotifyIconGetRect`）
+- [x] Slint 托盤能否偵測左鍵點擊與右鍵選單、能否動態更換圖示與 Tooltip
 - [ ] Windows 睡眠恢復事件的取得方式
 - [ ] Antigravity 在 Windows 上 language server 的行程名稱與命令列參數（v1）
 - [ ] Command Code 帳務頁面的資料來源與所需 cookie 名稱（v2）
