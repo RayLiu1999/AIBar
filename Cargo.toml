@@ -2,6 +2,9 @@
 name = "aibar"
 version = "0.1.0"
 edition = "2024"
+description = "Windows 系統匣的 AI 訂閱用量小工具"
+license = "MIT"
+authors = ["Ray Liu"]
 
 [dependencies]
 base64 = "0.23.1"

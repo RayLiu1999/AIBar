@@ -387,6 +387,8 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 ```
 AIBar/
 ├── AGENTS.md
+├── README.md                 // 說明（中文為主）；README.en.md 為英文版
+├── LICENSE                   // MIT
 ├── CONTEXT.md                // 名詞定義
 ├── Cargo.toml
 ├── build.rs                  // 編譯 .slint；產生 .ico 並嵌入圖示與檔案資訊
