@@ -69,6 +69,14 @@ component TabButton inherits Rectangle {
     in property <color> accent: Theme.text;
 
     callback clicked();
+    // 被選取時回報自己的位置，讓頁籤列捲動到看得見的地方
+    callback revealed(length, length);
+
+    changed selected => {
+        if (self.selected) {
+            self.revealed(self.x, self.width);
+        }
+    }
 
     min-width: lay.preferred-width;
     height: 40px;
@@ -593,24 +601,81 @@ export component MainWindow inherits Window {
                     padding-right: 6px;
                     padding-top: 4px;
                     spacing: 2px;
-                    TabButton {
-                        text: "總覽";
-                        selected: root.selected-tab == 0;
-                        clicked => {
-                            root.tab-selected(0);
-                        }
-                    }
-                    for card[i] in root.cards: TabButton {
-                        text: card.name;
-                        show-dot: true;
-                        accent: card.accent;
-                        selected: root.selected-tab == i + 1;
-                        clicked => {
-                            root.tab-selected(i + 1);
-                        }
-                    }
+
+                    // 頁籤超出視窗寬度時可橫向捲動，右側按鈕永遠留在畫面上
                     Rectangle {
-                        horizontal-stretch: 1;
+                    horizontal-stretch: 1;
+                    min-width: 0;
+
+                    tabs := Flickable {
+                        width: parent.width;
+                        height: parent.height;
+                        content-width: max(self.width, tab-row.preferred-width);
+                        content-height: self.height;
+
+                        // 只能橫向捲動，讓一般的上下滾輪也能左右捲
+                        TouchArea {
+                            width: tabs.content-width;
+                            height: tabs.height;
+                            scroll-event(event) => {
+                                if (tabs.content-width <= tabs.width) {
+                                    return reject;
+                                }
+                                tabs.content-x = clamp(tabs.content-x + event.delta-y + event.delta-x, tabs.width - tabs.content-width, 0px);
+                                accept
+                            }
+                        }
+
+                        tab-row := HorizontalLayout {
+                            height: tabs.height;
+                            spacing: 2px;
+                            TabButton {
+                                text: "總覽";
+                                selected: root.selected-tab == 0;
+                                clicked => {
+                                    root.tab-selected(0);
+                                }
+                                revealed(x, w) => {
+                                    tabs.reveal(x, w);
+                                }
+                            }
+                            for card[i] in root.cards: TabButton {
+                                text: card.name;
+                                show-dot: true;
+                                accent: card.accent;
+                                selected: root.selected-tab == i + 1;
+                                clicked => {
+                                    root.tab-selected(i + 1);
+                                }
+                                revealed(x, w) => {
+                                    tabs.reveal(x, w);
+                                }
+                            }
+                        }
+
+                        // 捲動到被選取的頁籤，讓它完整出現在可見範圍內
+                        function reveal(x: length, w: length) {
+                            if (x + self.content-x < 0) {
+                                self.content-x = -x;
+                            } else if (x + w + self.content-x > self.width) {
+                                self.content-x = self.width - x - w;
+                            }
+                        }
+                    }
+
+                    // 兩側漸層：提示還有頁籤藏在外面
+                    if tabs.content-x < 0: Rectangle {
+                        x: 0;
+                        width: 24px;
+                        height: tabs.height;
+                        background: @linear-gradient(90deg, Theme.window-bg 0%, Theme.window-bg.transparentize(100%) 100%);
+                    }
+                    if tabs.content-x > tabs.width - tabs.content-width: Rectangle {
+                        x: parent.width - 24px;
+                        width: 24px;
+                        height: tabs.height;
+                        background: @linear-gradient(90deg, Theme.window-bg.transparentize(100%) 0%, Theme.window-bg 100%);
+                    }
                     }
                     VerticalLayout {
                         alignment: center;
