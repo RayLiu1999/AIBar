@@ -17,6 +17,8 @@ use super::{UsageProvider, account_hash, get_json, home_dir, read_json_file};
 use crate::model::{FetchFailure, Snapshot, UsageWindow};
 
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
+const FIVE_HOURS: u64 = 5 * 3600;
+const WEEK: u64 = 7 * 86400;
 
 pub struct Claude;
 
@@ -123,14 +125,16 @@ fn parse_usage(v: &Value) -> Option<Vec<UsageWindow>> {
         }
     }
 
-    let legacy: Vec<UsageWindow> = [("five_hour", "5 小時"), ("seven_day", "每週")]
+    let legacy: Vec<UsageWindow> =
+        [("five_hour", "5 小時", FIVE_HOURS), ("seven_day", "每週", WEEK)]
         .into_iter()
-        .filter_map(|(key, name)| {
+        .filter_map(|(key, name, secs)| {
             let w = &v[key];
             Some(UsageWindow {
                 name: name.into(),
                 used_percent: w["utilization"].as_f64()?,
                 resets_at: parse_time(&w["resets_at"]),
+                window_secs: Some(secs),
             })
         })
         .collect();
@@ -141,6 +145,12 @@ fn parse_usage(v: &Value) -> Option<Vec<UsageWindow>> {
 /// `weekly_scoped` →「每週・{模型}」；未知的 kind 以原字串命名
 fn parse_limit(l: &Value) -> Option<UsageWindow> {
     let kind = l["kind"].as_str()?;
+    // 視窗長度由 kind 推得：session 為 5 小時、weekly_* 為 7 天
+    let window_secs = match kind {
+        "session" => Some(FIVE_HOURS),
+        k if k.starts_with("weekly") => Some(WEEK),
+        _ => None,
+    };
     let name = match kind {
         "session" => "5 小時".to_string(),
         "weekly_all" => "每週".to_string(),
@@ -154,6 +164,7 @@ fn parse_limit(l: &Value) -> Option<UsageWindow> {
         name,
         used_percent: l["percent"].as_f64()?,
         resets_at: parse_time(&l["resets_at"]),
+        window_secs,
     })
 }
 
@@ -187,6 +198,9 @@ mod tests {
         assert_eq!(w[0].used_percent, 61.0);
         assert!(w[0].resets_at.is_some());
         assert!(w[1].resets_at.is_none());
+        assert_eq!(w[0].window_secs, Some(FIVE_HOURS));
+        assert_eq!(w[2].window_secs, Some(WEEK));
+        assert_eq!(w[3].window_secs, None);
     }
 
     #[test]

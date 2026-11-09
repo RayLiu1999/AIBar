@@ -19,8 +19,8 @@ use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, SetForegroundWindow}
 use crate::{CardData, MainWindow};
 
 /// 第一次開啟時的視窗大小（邏輯像素，需與 main_window.slint 的 preferred 尺寸一致）
-const INITIAL_W: f32 = 420.0;
-const INITIAL_H: f32 = 360.0;
+const INITIAL_W: f32 = 460.0;
+const INITIAL_H: f32 = 640.0;
 /// 第一次開啟時與工作區右下角的間距（邏輯像素）
 const MARGIN: f32 = 12.0;
 /// 點托盤會讓視窗先失焦；這段時間內失焦的視窗，仍視為點擊當下在最前面
@@ -120,6 +120,11 @@ impl MainWindowHost {
 
     pub fn set_icon(&self, icon: Image) {
         self.window.set_window_icon(icon);
+    }
+
+    /// Slint 視窗本身，用於設定其他屬性與回呼
+    pub fn ui(&self) -> &MainWindow {
+        &self.window
     }
 
     fn hide(&self) {

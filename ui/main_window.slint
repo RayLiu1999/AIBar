@@ -1,28 +1,38 @@
-// 主視窗：每個啟用的 Provider 一張精簡卡片，每個額度視窗一行（規格書第 7 節）
+// 主視窗：頂部頁籤（總覽＋各 Provider），規格書第 7 節
 import { Spinner, Palette, ScrollView, Button } from "std-widgets.slint";
 
-// 用量等級，決定進度條與百分比的顏色
-export enum UsageLevel { normal, high, critical }
+// 依剩餘量分級：normal ≥30%、low 10–29%、critical <10%
+export enum UsageLevel { normal, low, critical }
 
-// 卡片中的一個額度視窗
-export struct UsageRow {
+// 一個額度視窗
+export struct WindowRow {
     name: string,
-    percent: float,       // 0–100，已重置時為 0
-    percent-text: string,
-    reset-text: string,   // 「2 時 13 分後」「11/12（四）14:59」「已重置」
+    value-text: string,   // 「剩餘 72%」或「已使用 28%」
+    bar: float,           // 進度條長度（0–100），依顯示方式
+    mark: float,          // 進度刻度位置（0–100）；-1 表示不顯示
+    pace-text: string,    // 「比預期少用 32% · 可撐到重置」；空字串表示不顯示
+    reset-text: string,   // 「2 時 1 分後重置」
+    reset-abs: string,    // 「今天 01:10」；只在 Provider 頁籤顯示
     level: UsageLevel,
 }
 
-// 一個 Provider 的卡片內容（由 Rust 端的 view::card 產生）
+// 一個 Provider 的內容（由 Rust 端的 view::card 產生）
 export struct CardData {
+    id: string,
     name: string,
-    plan: string,          // 空字串表示沒有方案標籤
-    rows: [UsageRow],
+    mono: string,          // 字母方塊上的字
+    accent: color,         // 代表色
+    plan: string,
+    rows: [WindowRow],
     has-snapshot: bool,
-    updated-text: string,  // 「更新於 N 分鐘前」
-    stale: bool,           // 舊快照：更新時間改用警示色
+    updated-text: string,
+    stale: bool,
     failure: string,       // 空字串表示最近一次刷新成功
+    failure-cmd: string,   // 可複製的修復指令（例如 claude）；空字串表示沒有
     refreshing: bool,
+    source: string,
+    usage-url: string,
+    next-refresh: string,
 }
 
 // 配色：跟隨 Windows 深色／淺色模式
@@ -30,37 +40,135 @@ global Theme {
     out property <bool> dark: Palette.color-scheme == ColorScheme.dark;
     out property <color> window-bg: dark ? #202020 : #f3f3f3;
     out property <color> card-bg: dark ? #2b2b2b : #ffffff;
-    out property <color> card-border: dark ? #383838 : #e5e5e5;
-    out property <color> text: dark ? #ffffff : #1b1b1b;
-    out property <color> subtext: dark ? #a6a6a6 : #5f5f5f;
-    out property <color> track: dark ? #454545 : #e6e6e6;
-    out property <color> chip-bg: dark ? #3a3a3a : #ededed;
-    out property <color> warning: dark ? #fcd34d : #b45309;
-    out property <color> normal: #22c55e;
-    out property <color> high: #eab308;
-    out property <color> critical: #ef4444;
+    out property <color> card-border: dark ? #383838 : #e2e2e2;
+    out property <color> divider: dark ? #353535 : #e8e8e8;
+    out property <color> text: dark ? #f3f3f3 : #1b1b1b;
+    out property <color> subtext: dark ? #ababab : #5c5c5c;
+    out property <color> track: dark ? #3d3d3d : #e3e3e3;
+    out property <color> chip-bg: dark ? #3a3a3a : #ececec;
+    out property <color> hover: dark ? #2d2d2d : #e9e9e9;
+    out property <color> marker: dark ? #f3f3f3 : #1b1b1b;
+    out property <color> low: dark ? #F2B544 : #b7791f;
+    out property <color> critical: dark ? #F06A5E : #c53030;
+    out property <color> warn-bg: dark ? #3a3020 : #fdf3dc;
+    out property <color> warn-border: dark ? #6b5426 : #e8c97a;
+    out property <color> warn-text: dark ? #f5dca6 : #6b4a0b;
 
-    public pure function level-color(level: UsageLevel) -> color {
-        level == UsageLevel.critical ? critical : level == UsageLevel.high ? high : normal
+    public pure function level-color(level: UsageLevel, accent: color) -> color {
+        level == UsageLevel.critical ? critical : level == UsageLevel.low ? low : accent
     }
 }
 
-// 進度條
-component UsageBar inherits Rectangle {
-    in property <float> percent;
-    in property <UsageLevel> level;
+// 頁籤
+component TabButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected;
+    in property <bool> show-dot;
+    in property <color> accent: Theme.text;
 
-    height: 6px;
-    border-radius: 3px;
-    background: Theme.track;
+    callback clicked();
 
+    min-width: lay.preferred-width;
+    height: 40px;
+    border-radius: 4px;
+    background: ta.has-hover && !root.selected ? Theme.hover : transparent;
+    accessible-role: tab;
+    accessible-label: root.text;
+
+    lay := HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 6px;
+        alignment: center;
+        if root.show-dot: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: root.accent;
+            }
+        }
+        Text {
+            text: root.text;
+            font-size: 13px;
+            font-weight: root.selected ? 700 : 400;
+            color: root.selected ? Theme.text : Theme.subtext;
+            vertical-alignment: center;
+        }
+    }
+
+    // 選取指示線
     Rectangle {
-        x: 0;
-        y: 0;
-        width: parent.width * max(0, min(1, root.percent / 100));
-        height: parent.height;
-        border-radius: parent.border-radius;
-        background: Theme.level-color(root.level);
+        x: 8px;
+        y: parent.height - 2px;
+        width: parent.width - 16px;
+        height: 2px;
+        border-radius: 1px;
+        background: root.selected ? root.accent : transparent;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// 只有圖示的按鈕（圖示以 16×16 的 SVG 路徑描邊）
+component IconButton inherits Rectangle {
+    in property <string> label;
+    in property <string> commands;
+
+    callback clicked();
+
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    background: ta.has-hover ? Theme.hover : transparent;
+    accessible-role: button;
+    accessible-label: root.label;
+
+    Path {
+        x: 10px;
+        y: 10px;
+        width: 16px;
+        height: 16px;
+        viewbox-width: 16;
+        viewbox-height: 16;
+        commands: root.commands;
+        stroke: Theme.text;
+        stroke-width: 1.5px;
+        fill: transparent;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// 代表色字母方塊
+component Monogram inherits Rectangle {
+    in property <string> text;
+    in property <color> accent;
+    in property <length> size: 22px;
+
+    width: root.size;
+    height: root.size;
+    border-radius: root.size * 0.27;
+    background: root.accent;
+
+    Text {
+        text: root.text;
+        font-size: root.size * 0.55;
+        font-weight: 700;
+        color: #1b1b1b;
+        horizontal-alignment: center;
+        vertical-alignment: center;
     }
 }
 
@@ -85,46 +193,107 @@ component PlanChip inherits Rectangle {
     }
 }
 
-// 一個額度視窗：名稱｜進度條｜百分比｜重置時間
-component UsageLine inherits HorizontalLayout {
-    in property <UsageRow> usage;
+// 一個額度視窗：名稱與數值｜進度條（含進度刻度）｜進度說明
+component WindowLine inherits VerticalLayout {
+    in property <WindowRow> usage;
+    in property <color> accent;
+    in property <bool> detail;
 
-    spacing: 8px;
-    Text {
-        width: 76px;
-        text: root.usage.name;
-        font-size: 12px;
-        color: Theme.text;
-        overflow: elide;
-        vertical-alignment: center;
-    }
-    VerticalLayout {
-        alignment: center;
-        horizontal-stretch: 1;
-        UsageBar {
-            percent: root.usage.percent;
-            level: root.usage.level;
+    spacing: 6px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+
+    HorizontalLayout {
+        spacing: 8px;
+        Text {
+            text: root.usage.name;
+            font-size: root.detail ? 15px : 14px;
+            font-weight: 700;
+            color: Theme.text;
+            horizontal-stretch: 0;
+        }
+        Text {
+            text: root.usage.value-text;
+            font-size: root.detail ? 15px : 14px;
+            font-weight: 700;
+            color: root.usage.level == UsageLevel.normal ? Theme.text : Theme.level-color(root.usage.level, root.accent);
+            horizontal-stretch: 0;
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+        Text {
+            text: root.usage.reset-text;
+            font-size: 12px;
+            color: Theme.subtext;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
         }
     }
-    Text {
-        width: 36px;
-        text: root.usage.percent-text;
-        font-size: 12px;
-        font-weight: 600;
-        color: Theme.level-color(root.usage.level);
-        horizontal-alignment: right;
-        vertical-alignment: center;
+
+    bar := Rectangle {
+        height: root.detail ? 10px : 8px;
+        border-radius: self.height / 2;
+        background: Theme.track;
+
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width * max(0, min(1, root.usage.bar / 100));
+            height: parent.height;
+            border-radius: parent.border-radius;
+            background: Theme.level-color(root.usage.level, root.accent);
+        }
+
+        // 進度刻度：依時間比例此刻應剩（或應已使用）的位置
+        if root.usage.mark >= 0: Rectangle {
+            x: parent.width * max(0, min(1, root.usage.mark / 100)) - 1px;
+            y: -3px;
+            width: 2px;
+            height: parent.height + 6px;
+            border-radius: 1px;
+            background: Theme.marker;
+        }
     }
-    Text {
-        width: 104px;
-        text: root.usage.reset-text;
-        font-size: 11px;
-        color: Theme.subtext;
-        horizontal-alignment: right;
-        vertical-alignment: center;
+
+    if root.usage.pace-text != "" || (root.detail && root.usage.reset-abs != ""): HorizontalLayout {
+        spacing: 8px;
+        Text {
+            text: root.usage.pace-text;
+            font-size: 12px;
+            color: Theme.subtext;
+            wrap: word-wrap;
+            horizontal-stretch: 1;
+        }
+        if root.detail: Text {
+            text: root.usage.reset-abs;
+            font-size: 12px;
+            color: Theme.subtext;
+            horizontal-stretch: 0;
+        }
     }
 }
 
+// 額度視窗清單（視窗之間有分隔線）
+component WindowList inherits VerticalLayout {
+    in property <[WindowRow]> rows;
+    in property <color> accent;
+    in property <bool> detail;
+
+    for row[i] in root.rows: VerticalLayout {
+        if i > 0: Rectangle {
+            height: 1px;
+            background: Theme.divider;
+        }
+        WindowLine {
+            usage: row;
+            accent: root.accent;
+            detail: root.detail;
+        }
+    }
+}
+
+// 總覽中的一張 Provider 卡片
 component ProviderCard inherits Rectangle {
     in property <CardData> data;
 
@@ -134,19 +303,22 @@ component ProviderCard inherits Rectangle {
     border-color: Theme.card-border;
 
     VerticalLayout {
-        padding-top: 10px;
-        padding-bottom: 10px;
-        padding-left: 12px;
-        padding-right: 12px;
-        spacing: 6px;
+        padding-top: 12px;
+        padding-bottom: 4px;
+        padding-left: 14px;
+        padding-right: 14px;
 
-        // 標題列：名稱、方案；右側為刷新中轉圈或更新時間
         HorizontalLayout {
-            spacing: 6px;
+            spacing: 8px;
+            padding-bottom: 4px;
+            Monogram {
+                text: root.data.mono;
+                accent: root.data.accent;
+            }
             Text {
                 text: root.data.name;
-                font-size: 13px;
-                font-weight: 600;
+                font-size: 15px;
+                font-weight: 700;
                 color: Theme.text;
                 vertical-alignment: center;
                 horizontal-stretch: 0;
@@ -154,52 +326,217 @@ component ProviderCard inherits Rectangle {
             if root.data.plan != "": VerticalLayout {
                 alignment: center;
                 horizontal-stretch: 0;
-                PlanChip { text: root.data.plan; }
+                PlanChip {
+                    text: root.data.plan;
+                }
             }
-            Rectangle { horizontal-stretch: 1; }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
             if root.data.refreshing: Spinner {
                 indeterminate: true;
-                width: 14px;
-                height: 14px;
+                width: 16px;
+                height: 16px;
             }
-            // 舊快照的更新時間用警示色
             if root.data.has-snapshot && !root.data.refreshing: Text {
                 text: root.data.updated-text;
-                font-size: 11px;
-                color: root.data.stale ? Theme.warning : Theme.subtext;
+                font-size: 12px;
+                color: root.data.stale ? Theme.low : Theme.subtext;
                 vertical-alignment: center;
                 horizontal-stretch: 0;
             }
         }
 
-        for row in root.data.rows: UsageLine {
-            usage: row;
+        if root.data.has-snapshot: WindowList {
+            rows: root.data.rows;
+            accent: root.data.accent;
+            detail: false;
         }
 
-        // 失敗原因（與快照並存顯示）
         if root.data.failure != "": Text {
             text: "⚠ " + root.data.failure;
             font-size: 12px;
-            color: Theme.warning;
+            color: Theme.low;
             wrap: word-wrap;
+        }
+        Rectangle {
+            height: 8px;
+        }
+    }
+}
+
+// Provider 頁籤的內容
+component ProviderDetail inherits VerticalLayout {
+    in property <CardData> data;
+
+    callback refresh();
+    callback copy-text(string);
+    callback open-url(string);
+
+    spacing: 14px;
+
+    // 大標題
+    HorizontalLayout {
+        spacing: 12px;
+        Monogram {
+            text: root.data.mono;
+            accent: root.data.accent;
+            size: 40px;
+        }
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: root.data.name;
+                    font-size: 18px;
+                    font-weight: 700;
+                    color: Theme.text;
+                    horizontal-stretch: 0;
+                }
+                if root.data.plan != "": VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 0;
+                    PlanChip {
+                        text: root.data.plan;
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+            }
+            Text {
+                text: root.data.refreshing ? "刷新中…" : root.data.updated-text;
+                font-size: 12px;
+                color: root.data.stale ? Theme.low : Theme.subtext;
+            }
+        }
+        if root.data.refreshing: VerticalLayout {
+            alignment: center;
+            Spinner {
+                indeterminate: true;
+                width: 18px;
+                height: 18px;
+            }
+        }
+    }
+
+    // 失敗提示框
+    if root.data.failure != "": Rectangle {
+        background: Theme.warn-bg;
+        border-width: 1px;
+        border-color: Theme.warn-border;
+        border-radius: 8px;
+
+        VerticalLayout {
+            padding: 12px;
+            spacing: 8px;
+            Text {
+                text: "⚠ " + root.data.failure + (root.data.has-snapshot ? "。下方為最後一次成功取得的數字。" : "");
+                font-size: 13px;
+                color: Theme.warn-text;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                if root.data.failure-cmd != "": Button {
+                    text: "複製指令 " + root.data.failure-cmd;
+                    clicked => {
+                        root.copy-text(root.data.failure-cmd);
+                    }
+                }
+                Button {
+                    text: "重試";
+                    clicked => {
+                        root.refresh();
+                    }
+                }
+            }
+        }
+    }
+
+    if root.data.has-snapshot: Rectangle {
+        background: Theme.card-bg;
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: Theme.card-border;
+
+        VerticalLayout {
+            padding-left: 14px;
+            padding-right: 14px;
+            padding-top: 2px;
+            padding-bottom: 2px;
+            WindowList {
+                rows: root.data.rows;
+                accent: root.data.accent;
+                detail: true;
+            }
+        }
+    }
+
+    // 資訊列
+    GridLayout {
+        spacing-horizontal: 12px;
+        spacing-vertical: 8px;
+        Row {
+            Text {
+                text: "來源";
+                font-size: 13px;
+                color: Theme.subtext;
+            }
+            Text {
+                text: root.data.source;
+                font-size: 13px;
+                color: Theme.text;
+                horizontal-stretch: 1;
+            }
+        }
+        Row {
+            Text {
+                text: "下次刷新";
+                font-size: 13px;
+                color: Theme.subtext;
+            }
+            Text {
+                text: root.data.next-refresh;
+                font-size: 13px;
+                color: Theme.text;
+            }
+        }
+    }
+
+    if root.data.usage-url != "": HorizontalLayout {
+        alignment: start;
+        Button {
+            text: "開啟官方用量頁";
+            clicked => {
+                root.open-url(root.data.usage-url);
+            }
         }
     }
 }
 
 export component MainWindow inherits Window {
     in property <[CardData]> cards;
-    // 視窗圖示（工作列按鈕）與托盤圖示同步，顏色隨用量變化
+    // 總覽最上方：「最先用完：Codex 每週，剩 59%」
+    in property <string> headline;
+    // 0 為總覽，n 為 cards[n - 1]
+    in property <int> selected-tab;
     in property <image> window-icon;
 
     callback refresh-all();
     callback hide-requested();
+    callback tab-selected(int);
+    callback copy-text(string);
+    callback open-url(string);
 
     title: "AIBar";
     icon: root.window-icon;
-    preferred-width: 420px;
-    preferred-height: 360px;
-    min-width: 360px;
-    min-height: 200px;
+    preferred-width: 460px;
+    preferred-height: 640px;
+    min-width: 380px;
+    min-height: 300px;
     background: Theme.window-bg;
 
     // 按 Esc 隱藏回托盤
@@ -213,29 +550,53 @@ export component MainWindow inherits Window {
         }
 
         VerticalLayout {
-            padding: 10px;
-            spacing: 8px;
+            // 頁籤列
+            Rectangle {
+                height: 46px;
 
-            // 工具列
-            HorizontalLayout {
-                padding-left: 2px;
-                Text {
-                    text: "AI 用量";
-                    font-size: 13px;
-                    font-weight: 600;
-                    color: Theme.subtext;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                }
-                Button {
-                    text: "↻ 立即刷新";
-                    clicked => {
-                        root.refresh-all();
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 6px;
+                    padding-top: 4px;
+                    spacing: 2px;
+                    TabButton {
+                        text: "總覽";
+                        selected: root.selected-tab == 0;
+                        clicked => {
+                            root.tab-selected(0);
+                        }
                     }
+                    for card[i] in root.cards: TabButton {
+                        text: card.name;
+                        show-dot: true;
+                        accent: card.accent;
+                        selected: root.selected-tab == i + 1;
+                        clicked => {
+                            root.tab-selected(i + 1);
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        IconButton {
+                            label: "立即刷新";
+                            commands: "M 13.5 8 A 5.5 5.5 0 1 1 11.9 4.1 M 13.5 1.5 L 13.5 4.6 L 10.4 4.6";
+                            clicked => {
+                                root.refresh-all();
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    y: parent.height - 1px;
+                    height: 1px;
+                    background: Theme.divider;
                 }
             }
 
-            // 內容超出視窗高度時捲動
             scroll := ScrollView {
                 vertical-stretch: 1;
                 content-width: self.visible-width;
@@ -243,15 +604,38 @@ export component MainWindow inherits Window {
 
                 list := VerticalLayout {
                     width: scroll.visible-width;
-                    spacing: 8px;
+                    padding: 14px;
+                    spacing: 12px;
 
-                    for card in root.cards: ProviderCard {
-                        data: card;
+                    if root.selected-tab == 0 && root.headline != "": Text {
+                        text: root.headline;
+                        font-size: 13px;
+                        color: Theme.subtext;
+                    }
+
+                    if root.selected-tab == 0: VerticalLayout {
+                        spacing: 12px;
+                        for card in root.cards: ProviderCard {
+                            data: card;
+                        }
+                    }
+
+                    if root.selected-tab > 0: ProviderDetail {
+                        data: root.cards[root.selected-tab - 1];
+                        refresh => {
+                            root.refresh-all();
+                        }
+                        copy-text(text) => {
+                            root.copy-text(text);
+                        }
+                        open-url(url) => {
+                            root.open-url(url);
+                        }
                     }
 
                     if root.cards.length == 0: Text {
                         text: "沒有啟用的 Provider，請從托盤右鍵選單啟用。";
-                        font-size: 12px;
+                        font-size: 13px;
                         color: Theme.subtext;
                         wrap: word-wrap;
                     }

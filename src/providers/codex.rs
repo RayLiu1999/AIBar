@@ -89,7 +89,8 @@ fn plan_name(plan_type: &str) -> String {
 }
 
 fn parse_window(w: &Value, suffix: Option<&str>) -> Option<UsageWindow> {
-    let base = window_name_from_seconds(w["limit_window_seconds"].as_u64()?);
+    let secs = w["limit_window_seconds"].as_u64()?;
+    let base = window_name_from_seconds(secs);
     Some(UsageWindow {
         name: match suffix {
             Some(s) => format!("{base}・{s}"),
@@ -97,6 +98,7 @@ fn parse_window(w: &Value, suffix: Option<&str>) -> Option<UsageWindow> {
         },
         used_percent: w["used_percent"].as_f64()?,
         resets_at: w["reset_at"].as_u64().map(|s| UNIX_EPOCH + Duration::from_secs(s)),
+        window_secs: Some(secs),
     })
 }
 
@@ -149,6 +151,7 @@ mod tests {
         assert_eq!(w[0].used_percent, 7.0);
         assert_eq!(w[1].name, "每週");
         assert_eq!(w[1].resets_at, Some(UNIX_EPOCH + Duration::from_secs(1794390434)));
+        assert_eq!(w[1].window_secs, Some(604800));
     }
 
     #[test]

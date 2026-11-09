@@ -24,6 +24,8 @@ pub struct UsageWindow {
     /// 0.0–100.0
     pub used_percent: f64,
     pub resets_at: Option<SystemTime>,
+    /// 視窗長度（秒），用於計算進度；推不出來時為 None
+    pub window_secs: Option<u64>,
 }
 
 /// 最近一次刷新沒有成功的理由
