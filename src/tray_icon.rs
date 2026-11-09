@@ -16,6 +16,7 @@ use windows::Win32::UI::HiDpi::{GetDpiForSystem, GetSystemMetricsForDpi};
 use windows::Win32::UI::WindowsAndMessaging::SM_CXSMICON;
 use windows::core::HSTRING;
 
+use crate::icon_art::{self, Canvas, circle, rounded_rect};
 use crate::view::{TrayFill, TrayView};
 
 type Rgb = [u8; 3];
@@ -32,64 +33,13 @@ pub fn tray_icon_size() -> u32 {
     if size > 0 { size as u32 } else { 16 }
 }
 
-/// RGBA 畫布（直接透明度，非預乘）
-struct Canvas {
-    size: u32,
-    px: Vec<[f32; 4]>,
-}
-
-impl Canvas {
-    fn new(size: u32) -> Self {
-        Self { size, px: vec![[0.0; 4]; (size * size) as usize] }
+fn into_image(canvas: Canvas) -> Image {
+    let rgba = canvas.to_rgba();
+    let mut buf = SharedPixelBuffer::<Rgba8Pixel>::new(canvas.size, canvas.size);
+    for (dst, p) in buf.make_mut_slice().iter_mut().zip(rgba.chunks_exact(4)) {
+        *dst = Rgba8Pixel { r: p[0], g: p[1], b: p[2], a: p[3] };
     }
-
-    /// 以覆蓋率 `cov`（0–1）把顏色疊到像素上（source-over）
-    fn blend(&mut self, i: usize, rgb: Rgb, cov: f32) {
-        if cov <= 0.0 {
-            return;
-        }
-        let d = &mut self.px[i];
-        let src = [rgb[0] as f32 / 255.0, rgb[1] as f32 / 255.0, rgb[2] as f32 / 255.0];
-        let out_a = cov + d[3] * (1.0 - cov);
-        for c in 0..3 {
-            d[c] = (src[c] * cov + d[c] * d[3] * (1.0 - cov)) / out_a.max(1e-6);
-        }
-        d[3] = out_a;
-    }
-
-    /// 對每個像素中心呼叫 `f(x, y) -> 覆蓋率` 並疊上顏色
-    fn fill(&mut self, rgb: Rgb, f: impl Fn(f32, f32) -> f32) {
-        for i in 0..self.px.len() {
-            let x = (i as u32 % self.size) as f32 + 0.5;
-            let y = (i as u32 / self.size) as f32 + 0.5;
-            self.blend(i, rgb, f(x, y));
-        }
-    }
-
-    fn into_image(self) -> Image {
-        let mut buf = SharedPixelBuffer::<Rgba8Pixel>::new(self.size, self.size);
-        for (dst, p) in buf.make_mut_slice().iter_mut().zip(self.px) {
-            let q = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-            *dst = Rgba8Pixel { r: q(p[0]), g: q(p[1]), b: q(p[2]), a: q(p[3]) };
-        }
-        Image::from_rgba8(buf)
-    }
-}
-
-/// 圓角矩形的覆蓋率（以有號距離場計算，邊緣自然抗鋸齒）
-fn rounded_rect(x: f32, y: f32, left: f32, top: f32, right: f32, bottom: f32, r: f32) -> f32 {
-    let (cx, cy) = ((left + right) / 2.0, (top + bottom) / 2.0);
-    let (hw, hh) = ((right - left) / 2.0, (bottom - top) / 2.0);
-    let qx = (x - cx).abs() - hw + r;
-    let qy = (y - cy).abs() - hh + r;
-    let outside = (qx.max(0.0).powi(2) + qy.max(0.0).powi(2)).sqrt();
-    let d = outside + qx.max(qy).min(0.0) - r;
-    (0.5 - d).clamp(0.0, 1.0)
-}
-
-fn circle(x: f32, y: f32, cx: f32, cy: f32, r: f32) -> f32 {
-    let d = ((x - cx).powi(2) + (y - cy).powi(2)).sqrt() - r;
-    (0.5 - d).clamp(0.0, 1.0)
+    Image::from_rgba8(buf)
 }
 
 /// 用 GDI 畫出文字遮罩（每像素 0–255 的覆蓋率），文字置中
@@ -203,26 +153,12 @@ pub fn make_tray_sized(view: &TrayView, size: u32) -> Image {
         canvas.fill([0x20, 0x20, 0x20], |x, y| circle(x, y, cx, cy, r + s * 0.06));
         canvas.fill(WARN, |x, y| circle(x, y, cx, cy, r));
     }
-    canvas.into_image()
+    into_image(canvas)
 }
 
-/// App 圖示：深色圓角方塊內三根由低到高、分別為 Provider 代表色的長條
+/// App 圖示（視窗與工作列）；畫法與 exe 圖示共用 icon_art
 pub fn make_app_icon(size: u32) -> Image {
-    let s = size as f32;
-    let k = s / 32.0; // 以 32×32 的設計稿座標縮放
-    let mut canvas = Canvas::new(size);
-    canvas.fill([0x26, 0x30, 0x3b], |x, y| rounded_rect(x, y, 0.0, 0.0, s, s, 8.0 * k));
-    let bars: [(f32, f32, Rgb); 3] = [
-        (7.0, 17.0, [0xE0, 0x8A, 0x67]),
-        (13.75, 12.0, [0x4C, 0xB5, 0xC1]),
-        (20.5, 7.0, [0x7B, 0xC8, 0x8A]),
-    ];
-    for (left, top, color) in bars {
-        canvas.fill(color, |x, y| {
-            rounded_rect(x, y, left * k, top * k, (left + 4.5) * k, 25.0 * k, 2.0 * k)
-        });
-    }
-    canvas.into_image()
+    into_image(icon_art::app_icon(size))
 }
 
 #[cfg(test)]

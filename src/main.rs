@@ -8,6 +8,7 @@
 
 mod autostart;
 mod config;
+mod icon_art;
 mod main_window;
 mod model;
 mod platform;

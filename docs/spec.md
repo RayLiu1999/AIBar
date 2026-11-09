@@ -206,7 +206,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 
 **App 圖示**
 
-- exe、工作列與標題列使用固定的 App 圖示：深色圓角方塊內三根由低到高、分別為 Provider 代表色的長條。狀態由托盤數字表達，App 圖示不隨狀態變化。
+- exe（build.rs 產生 16–256px 的 .ico 嵌入，並寫入檔案描述「AIBar」）、工作列與標題列使用固定的 App 圖示：深色圓角方塊內三根由低到高、分別為 Provider 代表色的長條。狀態由托盤數字表達，App 圖示不隨狀態變化。
 
 **主視窗**
 
@@ -345,7 +345,7 @@ AIBar/
 ├── AGENTS.md
 ├── CONTEXT.md                // 名詞定義
 ├── Cargo.toml
-├── build.rs                  // 以 slint-build 編譯 .slint
+├── build.rs                  // 編譯 .slint；產生 .ico 並嵌入圖示與檔案資訊
 ├── docs/
 │   ├── spec.md               // 本規格書
 │   ├── adr/                  // 架構決策
@@ -361,6 +361,7 @@ AIBar/
     ├── view.rs               // 模型轉畫面：卡片、進度、托盤內容與 Tooltip、時間文字
     ├── main_window.rs        // 主視窗顯示／隱藏、位置記憶、前景
     ├── tray_icon.rs          // 繪製托盤數字圖示（GDI 文字）與 App 圖示
+    ├── icon_art.rs           // 共用繪圖與 App 圖示（build.rs 也引用）
     ├── platform.rs           // 剪貼簿、開啟網址
     ├── scheduler.rs          // 刷新排程與退避（背景執行緒 + channel）
     ├── config.rs             // config.json 讀寫、首次啟動自動偵測
@@ -378,7 +379,7 @@ AIBar/
 
 **專案重點**
 
-- 依賴：`slint`（關閉預設 feature，只啟用 `std`、`compat-1-2`、`accessibility`、`backend-winit`、`renderer-software`、`system-tray`、`unstable-winit-030`）、`slint-build`（build dependency）、`ureq`、`serde`、`serde_json`、`chrono`（本地時區格式化重置時間）、`windows`。
+- 依賴：`slint`（關閉預設 feature，只啟用 `std`、`compat-1-2`、`accessibility`、`backend-winit`、`renderer-software`、`system-tray`、`unstable-winit-030`）、`slint-build` 與 `winresource`（build dependency；後者需 Windows SDK 的 rc.exe）、`ureq`、`serde`、`serde_json`、`chrono`（本地時區格式化重置時間）、`windows`。
 - 隱藏主控台視窗：`main.rs` 開頭加 `#![windows_subsystem = "windows"]`。
 - 單一執行個體：以具名 Mutex 防止重複啟動。
 - 執行緒模型：Slint UI 跑在主執行緒；排程器跑在背景執行緒，各 Provider 的請求在其中執行，結果透過 `slint::invoke_from_event_loop` 送回 UI 更新。
