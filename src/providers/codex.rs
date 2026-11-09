@@ -39,6 +39,11 @@ impl UsageProvider for Codex {
         auth_path().is_some_and(|p| p.exists())
     }
 
+    fn current_account_hash(&self) -> Option<String> {
+        let auth = read_json_file(&auth_path()?).ok()?;
+        auth["tokens"]["account_id"].as_str().map(account_hash)
+    }
+
     fn fetch(&self) -> Result<Snapshot, FetchFailure> {
         let path = auth_path().ok_or(FetchFailure::NotLoggedIn)?;
         let auth = read_json_file(&path)?;

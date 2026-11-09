@@ -50,6 +50,10 @@ impl UsageProvider for Claude {
         credentials_path().is_some_and(|p| p.exists())
     }
 
+    fn current_account_hash(&self) -> Option<String> {
+        organization_uuid().map(|org| account_hash(&org))
+    }
+
     fn fetch(&self) -> Result<Snapshot, FetchFailure> {
         let path = credentials_path().ok_or(FetchFailure::NotLoggedIn)?;
         let creds = read_json_file(&path)?;
@@ -64,10 +68,7 @@ impl UsageProvider for Claude {
         }
 
         let plan = plan_name(oauth["subscriptionType"].as_str(), oauth["rateLimitTier"].as_str());
-        let org = profile_path()
-            .and_then(|p| read_json_file(&p).ok())
-            .and_then(|v| v["oauthAccount"]["organizationUuid"].as_str().map(String::from))
-            .unwrap_or_default();
+        let org = organization_uuid().unwrap_or_default();
 
         let auth = format!("Bearer {token}");
         let body = get_json(
@@ -84,6 +85,12 @@ impl UsageProvider for Claude {
             fetched_at: SystemTime::now(),
         })
     }
+}
+
+/// 帳號識別：`.claude.json` 的 `oauthAccount.organizationUuid`
+fn organization_uuid() -> Option<String> {
+    let profile = read_json_file(&profile_path()?).ok()?;
+    profile["oauthAccount"]["organizationUuid"].as_str().map(String::from)
 }
 
 /// 方案名稱：`max` + `default_claude_max_5x` →「Max 5x」；`pro` →「Pro」

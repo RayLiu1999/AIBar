@@ -3,6 +3,7 @@
 //! 排程器跑在背景執行緒；每次抓取再各開一條執行緒，讓 Provider 並行且彼此獨立。
 //! 狀態有變化時，把所有 Provider 的 ProviderStatus 交給 `on_update`（由呼叫端送回 UI 執行緒）。
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
@@ -10,6 +11,7 @@ use std::time::{Duration, SystemTime};
 
 use crate::model::{FetchFailure, ProviderStatus, Snapshot};
 use crate::providers::UsageProvider;
+use crate::snapshot_store;
 
 /// 背景刷新週期
 pub const REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
@@ -66,28 +68,38 @@ impl Slot {
     }
 }
 
-/// 啟動排程器。啟動後立即刷新一次全部啟用的 Provider。
+/// 啟動排程器。`snapshots` 為上次存下的快照：未滿一個刷新週期的等到期再刷新
+/// （避免頻繁重開程式時打到限流），其餘立即刷新。
 pub fn spawn(
     providers: Vec<Arc<dyn UsageProvider>>,
     enabled: Vec<&'static str>,
+    mut snapshots: HashMap<String, Snapshot>,
     on_update: impl Fn(Vec<ProviderStatus>) + Send + 'static,
 ) -> Scheduler {
     let (tx, rx) = mpsc::channel();
     let now = SystemTime::now();
     let slots = providers
         .into_iter()
-        .map(|p| Slot {
-            status: ProviderStatus {
-                provider_id: p.id(),
-                snapshot: None,
-                last_failure: None,
-                refreshing: false,
-            },
-            enabled: enabled.contains(&p.id()),
-            next_due: now,
-            interval: REFRESH_INTERVAL,
-            backoff_until: None,
-            provider: p,
+        .map(|p| {
+            let snapshot = snapshots.remove(p.id());
+            let next_due = snapshot
+                .as_ref()
+                .map(|s| s.fetched_at + REFRESH_INTERVAL)
+                .filter(|due| *due > now && *due <= now + REFRESH_INTERVAL)
+                .unwrap_or(now);
+            Slot {
+                status: ProviderStatus {
+                    provider_id: p.id(),
+                    snapshot,
+                    last_failure: None,
+                    refreshing: false,
+                },
+                enabled: enabled.contains(&p.id()),
+                next_due,
+                interval: REFRESH_INTERVAL,
+                backoff_until: None,
+                provider: p,
+            }
         })
         .collect();
 
@@ -162,10 +174,17 @@ fn run(
                 publish(&slots);
             }
             Ok(Msg::Done(id, result)) => {
+                let success = result.is_ok();
                 if let Some(slot) = slots.iter_mut().find(|s| s.status.provider_id == id) {
                     finish(slot, result);
                 }
                 publish(&slots);
+                // 成功時把所有快照寫入檔案
+                if success {
+                    snapshot_store::save(slots.iter().filter_map(|s| {
+                        Some((s.status.provider_id, s.status.snapshot.as_ref()?))
+                    }));
+                }
             }
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => break,

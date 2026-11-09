@@ -97,12 +97,22 @@ impl Config {
     }
 }
 
-fn dir() -> Option<PathBuf> {
+/// AIBar 自己的資料夾：`%APPDATA%\AiBar`
+pub fn app_dir() -> Option<PathBuf> {
     std::env::var_os("APPDATA").map(|d| PathBuf::from(d).join("AiBar"))
 }
 
 fn path() -> Option<PathBuf> {
-    dir().map(|d| d.join("config.json"))
+    app_dir().map(|d| d.join("config.json"))
+}
+
+/// 寫入 `app_dir()` 下的檔案：先寫暫存檔再改名，避免寫到一半當機留下損毀的檔案
+pub fn write_atomic(file_name: &str, contents: &str) -> std::io::Result<()> {
+    let dir = app_dir().ok_or_else(|| std::io::Error::other("找不到 APPDATA"))?;
+    std::fs::create_dir_all(&dir)?;
+    let tmp = dir.join(format!("{file_name}.tmp"));
+    std::fs::write(&tmp, contents)?;
+    std::fs::rename(&tmp, dir.join(file_name))
 }
 
 /// 讀取設定。檔案不存在時為首次啟動：`detected` 中的 Provider 預設啟用，並立即寫入檔案。
@@ -130,16 +140,10 @@ pub fn load(detected: &[&str]) -> Config {
     }
 }
 
-/// 寫入設定：先寫暫存檔再改名，避免寫到一半當機留下損毀的檔案
+/// 寫入設定
 pub fn save(cfg: &Config) {
-    let (Some(dir), Some(path)) = (dir(), path()) else { return };
-    let result = (|| -> std::io::Result<()> {
-        std::fs::create_dir_all(&dir)?;
-        let tmp = dir.join("config.json.tmp");
-        std::fs::write(&tmp, serde_json::to_string_pretty(cfg).unwrap_or_default())?;
-        std::fs::rename(&tmp, &path)
-    })();
-    if let Err(e) = result {
+    let text = serde_json::to_string_pretty(cfg).unwrap_or_default();
+    if let Err(e) = write_atomic("config.json", &text) {
         eprintln!("[設定] 無法寫入 config.json：{e}");
     }
 }

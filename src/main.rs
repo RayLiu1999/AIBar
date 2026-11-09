@@ -13,6 +13,7 @@ mod model;
 mod platform;
 mod providers;
 mod scheduler;
+mod snapshot_store;
 mod tray_icon;
 mod view;
 
@@ -284,8 +285,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let enabled: Vec<&'static str> =
         available.iter().copied().filter(|id| cfg.is_enabled(id)).collect();
 
+    // 上次存下的快照；帳號已更換的捨棄
+    let snapshots = snapshot_store::keep_matching(snapshot_store::load(), |id| {
+        all.iter().find(|p| p.id() == id)?.current_account_hash()
+    });
+
     // 排程器在背景執行緒，結果送回 UI 執行緒交給 App
-    let scheduler = scheduler::spawn(all, enabled, |statuses| {
+    let scheduler = scheduler::spawn(all, enabled, snapshots, |statuses| {
         let _ = slint::invoke_from_event_loop(move || {
             if let Some(app) = APP.with(|a| a.borrow().upgrade()) {
                 app.set_statuses(statuses);

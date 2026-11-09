@@ -19,6 +19,9 @@ pub trait UsageProvider: Send + Sync {
     fn id(&self) -> &'static str;
     /// 憑證檔是否存在（只檢查檔案，不讀內容）；用於首次啟動自動偵測
     fn credentials_present(&self) -> bool;
+    /// 目前登入帳號的雜湊（只讀本機檔案，不連網）；讀不到時為 None。
+    /// 用於啟動時判斷存下的快照是否屬於目前帳號。
+    fn current_account_hash(&self) -> Option<String>;
     fn fetch(&self) -> Result<Snapshot, FetchFailure>;
 }
 
