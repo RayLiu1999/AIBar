@@ -68,11 +68,11 @@ pub fn get_json(provider: &str, url: &str, headers: &[(&str, &str)]) -> Result<V
     }
     let started = Instant::now();
     let mut resp = req.call().map_err(|e| {
-        eprintln!("[{provider}] 連線失敗：{e}");
+        log!("[{provider}] 連線失敗：{e}");
         FetchFailure::Network
     })?;
     let status = resp.status().as_u16();
-    eprintln!("[{provider}] HTTP {status}，{} ms", started.elapsed().as_millis());
+    log!("[{provider}] HTTP {status}，{} ms", started.elapsed().as_millis());
 
     match status {
         200..=299 => {}

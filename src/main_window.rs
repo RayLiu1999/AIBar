@@ -67,7 +67,7 @@ fn bring_to_front(window: &slint::Window) {
         let RawWindowHandle::Win32(h) = handle.as_raw() else { return };
         let hwnd = HWND(h.hwnd.get() as *mut core::ffi::c_void);
         if !unsafe { SetForegroundWindow(hwnd) }.as_bool() {
-            eprintln!("[視窗] 無法取得前景焦點");
+            log!("[視窗] 無法取得前景焦點");
         }
     });
 }
@@ -188,7 +188,7 @@ impl MainWindowHost {
             }
         }
         if let Err(e) = self.window.show() {
-            eprintln!("[視窗] 顯示失敗：{e}");
+            log!("[視窗] 顯示失敗：{e}");
             return;
         }
         if !was_visible {

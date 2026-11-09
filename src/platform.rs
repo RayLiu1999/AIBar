@@ -1,14 +1,26 @@
-//! Windows 系統功能：複製到剪貼簿、以預設瀏覽器開啟網址。
+//! Windows 系統功能：單一執行個體、複製到剪貼簿、以預設瀏覽器開啟網址。
 
-use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
+use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError, GlobalFree, HANDLE, HGLOBAL};
 use windows::Win32::System::DataExchange::{
     CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
 };
 use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
 use windows::Win32::System::Ole::CF_UNICODETEXT;
+use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::core::{HSTRING, w};
+
+/// 取得單一執行個體鎖（具名 Mutex，範圍為目前登入工作階段）。
+/// 已有另一份 AIBar 持有時回傳 false。鎖在程式結束時由系統釋放。
+pub fn acquire_single_instance() -> bool {
+    match unsafe { CreateMutexW(None, false, w!("Local\\AIBar.SingleInstance")) } {
+        // 刻意不關閉 handle：持有到程式結束
+        Ok(_handle) => (unsafe { GetLastError() }) != ERROR_ALREADY_EXISTS,
+        // 建立失敗時不擋住啟動
+        Err(_) => true,
+    }
+}
 
 /// 把文字複製到剪貼簿；失敗時回傳 false
 pub fn copy_to_clipboard(text: &str) -> bool {

@@ -248,7 +248,7 @@ fn finish(slot: &mut Slot, result: Result<Snapshot, FetchFailure>) {
             slot.backoff_until = Some(until);
             slot.next_due = until;
             slot.status.last_failure = Some(FetchFailure::RateLimited { retry_at: until });
-            eprintln!("[{}] 限流，退避 {} 分鐘", slot.status.provider_id, slot.interval.as_secs() / 60);
+            log!("[{}] 限流，退避 {} 分鐘", slot.status.provider_id, slot.interval.as_secs() / 60);
         }
         Err(failure) => {
             slot.status.last_failure = Some(failure);

@@ -71,7 +71,7 @@ pub fn set_enabled(enabled: bool) -> bool {
     match result {
         // 關閉時值本來就不存在也算成功
         Err(e) if enabled => {
-            eprintln!("[開機自啟] 無法寫入登錄檔：{e}");
+            log!("[開機自啟] 無法寫入登錄檔：{e}");
             false
         }
         _ => true,

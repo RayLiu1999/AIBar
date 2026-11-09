@@ -6,6 +6,8 @@
 //! `aibar --probe`：不開 UI，對每個 Provider 抓取一次並印出結果與回應結構（遮蔽字串值），
 //! 用於驗證端點格式。
 
+#[macro_use]
+mod applog;
 mod autostart;
 mod config;
 mod icon_art;
@@ -212,7 +214,7 @@ impl App {
                     *self.settings.borrow_mut() = Some(w);
                 }
                 Err(e) => {
-                    eprintln!("[設定] 無法建立設定視窗：{e}");
+                    log!("[設定] 無法建立設定視窗：{e}");
                     return;
                 }
             }
@@ -263,6 +265,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::args().any(|a| a == "--probe") {
         probe();
         return Ok(());
+    }
+
+    // 已有一份在執行就直接結束，避免托盤出現兩個圖示、兩份排程同時打端點
+    if !platform::acquire_single_instance() {
+        return Ok(());
+    }
+    log!("AIBar {} 啟動", env!("CARGO_PKG_VERSION"));
+    // 正式版：開機自啟已開啟時，把登錄的路徑更新為目前的執行檔（exe 搬過位置也能正確自啟）。
+    // 開發版不做，以免把 target\debug 的路徑寫進去。
+    #[cfg(not(debug_assertions))]
+    if autostart::is_enabled() {
+        autostart::set_enabled(true);
     }
 
     slint::BackendSelector::new()

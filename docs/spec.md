@@ -22,7 +22,7 @@ Nov 9, 2026 · @Ray（2026-11-09 依規劃訪談結果修訂；名詞定義見�
 
 - v0 完成後，Claude 與 Codex 用量能正確顯示（首次使用 Rust，時程預留緩衝）。
 - 資料與官方網頁或 CLI 顯示的用量誤差在一個背景刷新週期內；開啟視窗時誤差在半個背景刷新間隔內（Claude 5 分鐘、Codex 2.5 分鐘）。
-- 視窗隱藏時常駐記憶體盡量壓低、閒置時 CPU 接近 0，啟動後數秒內出現托盤圖示（具體數值待開發後實測再定）。
+- 視窗隱藏時常駐記憶體盡量壓低、閒置時 CPU 接近 0，啟動後數秒內出現托盤圖示。2026-11-10 實測正式版：exe 8.3 MB；視窗隱藏時工作集 32 MB、私有記憶體 5 MB；閒置 30 秒 CPU 時間 0 ms。
 
 ## 2. 範圍
 
@@ -275,7 +275,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 | --- | --- | --- |
 | `config.json` | Provider 啟用與排序、顯示方式、最後選的頁籤、視窗位置與大小 | 由設定視窗與主視窗讀寫，使用者不需編輯 |
 | `snapshots.json` | 各 Provider 的快照、v2 的已通知紀錄 | 每次刷新成功時寫入，啟動時讀取；讀不到或格式錯誤時視為沒有快照 |
-| `aibar.log` | 日誌 | 超過 1 MB 改名為 `aibar.log.old`，最多保留兩份 |
+| `aibar.log` | 日誌（時間、Provider、狀態碼、耗時、錯誤種類） | 超過 1 MB 改名為 `aibar.log.old`，最多保留兩份；debug 版同時印到主控台；單元測試不寫入 |
 | `secrets.bin` | Command Code cookie（v2） | `CryptProtectData`（範圍 `CurrentUser`）加密 |
 
 ```json
@@ -367,7 +367,7 @@ AIBar/
     ├── config.rs             // config.json 讀寫、首次啟動自動偵測
     ├── snapshot_store.rs     // snapshots.json 讀寫
     ├── autostart.rs          // 登錄檔 Run 鍵與 StartupApproved
-    ├── log.rs                // 日誌與輪替
+    ├── applog.rs             // 日誌與輪替（log! 巨集）
     ├── secret.rs             // DPAPI 加解密（v2）
     └── providers/
         ├── mod.rs            // UsageProvider trait
@@ -381,7 +381,8 @@ AIBar/
 
 - 依賴：`slint`（關閉預設 feature，只啟用 `std`、`compat-1-2`、`accessibility`、`backend-winit`、`renderer-software`、`system-tray`、`unstable-winit-030`）、`slint-build` 與 `winresource`（build dependency；後者需 Windows SDK 的 rc.exe）、`ureq`、`serde`、`serde_json`、`chrono`（本地時區格式化重置時間）、`windows`。
 - 隱藏主控台視窗：`main.rs` 開頭加 `#![windows_subsystem = "windows"]`。
-- 單一執行個體：以具名 Mutex 防止重複啟動。
+- 單一執行個體：以具名 Mutex（`Local\AIBar.SingleInstance`）防止重複啟動；第二份直接結束。
+- 開機自啟路徑：正式版啟動時若開機自啟已開啟，把登錄的路徑更新為目前的執行檔（開發版不更新）。
 - 執行緒模型：Slint UI 跑在主執行緒；排程器跑在背景執行緒，各 Provider 的請求在其中執行，結果透過 `slint::invoke_from_event_loop` 送回 UI 更新。
 - `[profile.release]`：`opt-level = "z"`、`lto = true`、`codegen-units = 1`、`strip = true`、`panic = "abort"`。
 

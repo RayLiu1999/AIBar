@@ -128,7 +128,7 @@ pub fn load(detected: &[&str]) -> Config {
         }
         other => {
             if matches!(other, Some(Err(_))) {
-                eprintln!("[設定] config.json 格式錯誤，改用預設值");
+                log!("[設定] config.json 格式錯誤，改用預設值");
             }
             let mut cfg = Config::default();
             for id in detected {
@@ -144,7 +144,7 @@ pub fn load(detected: &[&str]) -> Config {
 pub fn save(cfg: &Config) {
     let text = serde_json::to_string_pretty(cfg).unwrap_or_default();
     if let Err(e) = write_atomic("config.json", &text) {
-        eprintln!("[設定] 無法寫入 config.json：{e}");
+        log!("[設定] 無法寫入 config.json：{e}");
     }
 }
 

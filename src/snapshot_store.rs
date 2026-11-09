@@ -112,7 +112,7 @@ pub fn load() -> HashMap<String, Snapshot> {
 /// 寫入所有快照（整個檔案覆寫）
 pub fn save<'a>(snapshots: impl IntoIterator<Item = (&'a str, &'a Snapshot)>) {
     if let Err(e) = write_atomic(FILE_NAME, &serialize(snapshots)) {
-        eprintln!("[快照] 無法寫入 {FILE_NAME}：{e}");
+        log!("[快照] 無法寫入 {FILE_NAME}：{e}");
     }
 }
 
@@ -125,7 +125,7 @@ pub fn keep_matching(
         .into_iter()
         .filter(|(id, s)| match current(id) {
             Some(hash) if hash != s.account_hash => {
-                eprintln!("[快照] {id} 帳號已更換，捨棄舊快照");
+                log!("[快照] {id} 帳號已更換，捨棄舊快照");
                 false
             }
             _ => true,
