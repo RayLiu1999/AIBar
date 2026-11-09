@@ -5,7 +5,7 @@
 ## Language
 
 **Provider**：
-一個提供額度的 AI 服務（Claude、Codex、Antigravity、Command Code），是用量資料的來源單位。
+一個提供額度的 AI 服務（Claude、Codex、Antigravity、Command Code、OpenRouter），是用量資料的來源單位。
 _Avoid_: 服務、平台、帳號
 
 **啟用**：
@@ -31,6 +31,10 @@ _Avoid_: 速率、燃燒率
 **焦點 Provider**：
 托盤圖示目前代表的 Provider：主視窗在總覽時為排序第一的啟用 Provider，在某個 Provider 頁籤時為該 Provider。
 _Avoid_: 目前 Provider、主要 Provider
+
+**金額型額度**：
+以美元計的額度（本期已用與上限），例如 Command Code 的月額度、OpenRouter 的儲值餘額；與額度視窗並存顯示。
+_Avoid_: 點數、餘額（「餘額」只用於 OpenRouter 的儲值）
 
 **快照（Snapshot）**：
 某個 Provider 最後一次**成功**取得的用量資料，連同取得時間。抓取失敗不會覆蓋快照。

@@ -1,6 +1,6 @@
 # Windows AI 用量托盤工具 規格書
 
-Nov 9, 2026 · @Ray（2026-11-09 依規劃訪談結果修訂；名詞定義見根目錄 `CONTEXT.md`，架構決策見 `docs/adr/`）
+Nov 9, 2026 · @Ray（2026-11-10 v0–v2 與 OpenRouter 完成後同步；名詞定義見根目錄 `CONTEXT.md`，架構決策見 `docs/adr/`）
 
 ## 1. 概述與目標
 
@@ -12,11 +12,11 @@ Nov 9, 2026 · @Ray（2026-11-09 依規劃訪談結果修訂；名詞定義見�
 
 - 在系統匣直接看到「還剩幾 %」：托盤圖示寫著焦點 Provider 最先用完的額度剩餘百分比，外框為該 Provider 的代表色。
 - 點擊托盤圖示開啟主視窗，以卡片與進度條顯示每個 Provider 的各個額度視窗與重置倒數；開啟視窗時資料是新的。
-- 免輸入密碼：借用 CLI 已登入的 OAuth token。
+- 免輸入密碼：借用 CLI 已登入的憑證（Claude、Codex、Command Code）或本機 App（Antigravity）；只有 OpenRouter 需要在設定貼上 API key。
 - 最輕量：單一 Rust 執行檔（exe）、免安裝 runtime、無背景服務、無資料庫。
 - 所有使用者設定都在設定視窗操作，使用者不需要編輯任何檔案。
 
-**支援的 Provider**：Claude（訂閱）、Codex（訂閱）、Antigravity、Command Code。
+**支援的 Provider**：Claude（訂閱）、Codex（訂閱）、Antigravity、Command Code、OpenRouter。
 
 **成功標準**
 
@@ -31,8 +31,9 @@ Nov 9, 2026 · @Ray（2026-11-09 依規劃訪談結果修訂；名詞定義見�
 | 版本 | 內容 | 驗收標準 |
 | --- | --- | --- |
 | v0 | Claude、Codex Provider；托盤數字圖示（焦點 Provider 的剩餘 %、代表色外框、低量轉色、警示標記）；主視窗（總覽與各 Provider 頁籤）顯示各額度視窗剩餘量、進度刻度與重置倒數；設定視窗（Provider 啟用與排序、顯示方式、開機自啟）；背景定期刷新（Claude 每 10 分鐘、Codex 每 5 分鐘）、開啟視窗時自動刷新；手動刷新；失敗時保留快照並顯示失敗原因；快照存檔（重開機後仍可顯示）；429 退避；右鍵選單（立即刷新、設定、關於、結束）；App 圖示 | 兩個 Provider 的數字與官方顯示一致 |
-| v1 | Antigravity Provider（本機 language server 探測） | Antigravity 開啟時能顯示用量，未開啟時顯示「未執行」 |
-| v2 | Command Code Provider（手動貼 cookie，DPAPI 加密儲存）；80% 與 95% 的 Windows Toast 通知 | Cookie 過期時有明確提示，不會當機 |
+| v1 ✓ | Antigravity Provider（本機 language server 探測） | Antigravity 開啟時能顯示用量，未開啟時顯示「未執行」 |
+| v2 ✓ | Command Code Provider（借用 CLI 的 API key，見 ADR-0004）；80% 與 95% 的 Windows Toast 通知 | 憑證失效時有明確提示，不會當機 |
+| v3 ✓ | OpenRouter Provider（設定中輸入 API key，DPAPI 加密儲存） | 額度與餘額正確；key 無效時有明確提示 |
 
 **刻意不做**
 
@@ -54,7 +55,7 @@ Nov 9, 2026 · @Ray（2026-11-09 依規劃訪談結果修訂；名詞定義見�
 | UI | Slint 1.18 以上 | 宣告式 UI，內建 `SystemTrayIcon` 與 `Tooltip` 元素，Windows 上以 `Shell_NotifyIconW` 實作托盤，不需另外裝托盤套件 |
 | HTTP | `ureq`（同步） | 每幾分鐘只打少量請求，搭配背景執行緒即可，不引入 tokio，減少體積與複雜度 |
 | JSON | `serde` + `serde_json` | Rust 事實標準，設定檔、快照檔與 API 回應共用 |
-| Windows API | `windows` crate | DPAPI 加密、登錄檔（開機自啟）、行程探測（Antigravity） |
+| Windows API | `windows` crate | DPAPI 加密、登錄檔（開機自啟、通知 AUMID）、行程與連接埠探測（Antigravity）、WinRT Toast |
 | 渲染器 | 先用軟體渲染器 | 記憶體最省；實測後再決定是否改用 GPU 渲染器 |
 | 發佈 | `cargo build --release` | 單一 exe；release 設定開啟 LTO、`strip`、`panic = "abort"` 縮小體積 |
 
@@ -75,7 +76,8 @@ flowchart BT
         S1["讀取 OAuth token<br/>Anthropic 用量端點"]
         S2["讀取 auth.json<br/>ChatGPT 用量端點"]
         S3["本機 language server<br/>探測 port 與 token"]
-        S4["手動貼上 cookie<br/>帳務頁面資料"]
+        S4["讀取 auth.json API key<br/>Command Code 帳務 API"]
+        S5["設定中輸入的 API key<br/>OpenRouter key 與餘額 API"]
     end
 
     subgraph Providers["Providers：各自實作 UsageProvider trait"]
@@ -84,18 +86,20 @@ flowchart BT
         P2["Codex<br/>版本 v0"]
         P3["Antigravity<br/>版本 v1"]
         P4["Command Code<br/>版本 v2"]
+        P5["OpenRouter<br/>版本 v3"]
     end
 
     S1 --> P1
     S2 --> P2
     S3 --> P3
     S4 --> P4
-    Secret["SecretStore<br/>Cookie 以 DPAPI 加密"] --> P4
+    S5 --> P5
+    Secret["SecretStore<br/>API key 以 DPAPI 加密"] --> P5
 
     Providers --> Scheduler["RefreshScheduler<br/>並行刷新、退避，單一失敗不影響其他"]
-    Scheduler <--> Store["SnapshotStore<br/>快照與通知紀錄（snapshots.json）"]
+    Scheduler <--> Store["SnapshotStore<br/>快照（snapshots.json）"]
     Scheduler -- ProviderStatus --> UI["UI 層（Slint）<br/>托盤圖示、Tooltip、主視窗、右鍵選單、Toast 通知"]
-    UI -- 啟用開關、手動刷新 --> Config["ConfigStore<br/>config.json：各 Provider 是否啟用"]
+    UI -- 啟用開關、排序、手動刷新 --> Config["ConfigStore<br/>config.json：啟用、排序、顯示方式、通知"]
     Config --> Scheduler
 ```
 
@@ -103,14 +107,15 @@ flowchart BT
 
 ## 5. Provider 規格
 
-四個 Provider 都不要求使用者輸入帳密：Claude 與 Codex 借用 CLI 已登入的 OAuth token，Antigravity 探測本機行程，Command Code 使用手動貼上的 cookie。Claude 與 Codex 的端點已於 2026-11-09 實測確認（非公開端點，仍可能改版）。
+Claude、Codex、Command Code 借用 CLI 已登入的憑證，Antigravity 探測本機 App，OpenRouter 使用設定中輸入的 API key（官方公開 API）。除 OpenRouter 外皆為非公開端點，已於 2026-11-09／10 實測確認，仍可能改版。
 
 | Provider | 版本 | 認證來源 | 取得方式 | 方案名稱 |
 | --- | --- | --- | --- | --- |
 | Claude | v0 | `%USERPROFILE%\.claude\.credentials.json` 的 `claudeAiOauth.accessToken`（`expiresAt` 為毫秒，壽命約 8 小時） | `GET https://api.anthropic.com/api/oauth/usage`，header：`Authorization: Bearer <token>`、`anthropic-beta: oauth-2025-04-20` | `claudeAiOauth.subscriptionType` + `rateLimitTier`（例：`max` + `default_claude_max_5x` → 「Max 5x」） |
 | Codex | v0 | `%USERPROFILE%\.codex\auth.json` 的 `tokens.access_token`、`tokens.account_id`（JWT，壽命約 10 天） | `GET https://chatgpt.com/backend-api/wham/usage`，header：`Authorization: Bearer <token>`、`ChatGPT-Account-Id: <account_id>` | 回應的 `plan_type`（例：`plus` → 「Plus」） |
-| Antigravity | v1 | 無（本機探測） | 用 WMI 找出 language server 行程，從命令列取得 port 與 token，呼叫本機端點（待驗證） | 待驗證 |
-| Command Code | v2 | 使用者手動貼上的瀏覽器 cookie | 以 cookie 取得每月美金額度（billing 頁面資料，待驗證） | 待驗證 |
+| Antigravity | v1 | 無（本機探測） | 見下方「Antigravity 探測」 | `GetUserStatus` 的 `userStatus.planStatus.planInfo.planName`（例：「Pro」） |
+| Command Code | v2 | `%USERPROFILE%\.commandcode\auth.json` 的 `apiKey`、`userId` | `GET https://api.commandcode.ai/alpha/billing/credits` 與 `/alpha/billing/subscriptions`，header：`Authorization: Bearer <apiKey>` | 訂閱的 `planId` 對照 CLI 內建表（例：`individual-go-v1` →「Go」，月額度 $10） |
+| OpenRouter | v3 | 設定視窗輸入的 API key（DPAPI 加密存於 `secrets.bin`） | `GET https://openrouter.ai/api/v1/key` 與 `/api/v1/credits`，header：`Authorization: Bearer <key>` | `is_free_tier` →「免費」或「付費」 |
 
 **Claude 回應解析**
 
@@ -124,6 +129,27 @@ flowchart BT
 - `rate_limit.primary_window` 與 `rate_limit.secondary_window`：`used_percent`、`limit_window_seconds`、`reset_at`（Unix 秒）。
 - 視窗名稱由 `limit_window_seconds` 推得：18000 →「5 小時」、604800 →「每週」，其他值換算成小時或天數。
 - `additional_rate_limits` 有值時一併顯示。
+
+**Antigravity 探測**
+
+- 以 ToolHelp 列舉行程，找出 `language_server*.exe` 且命令列含 `antigravity` 者；以 `NtQueryInformationProcess(ProcessCommandLineInformation)` 讀命令列，取出 `--csrf_token`（必須）、`--extension_server_port`、`--extension_server_csrf_token`。IDE 擴充套件內的 server（`--app_data_dir antigravity-ide`）優先順序較低。
+- 以 `GetExtendedTcpTable`（擁有者 PID、只取 LISTEN）列出該行程在聽的連接埠，逐一 `POST https://127.0.0.1:<port>/exa.language_server_pb.LanguageServerService/GetUnleashData`，第一個 200 即為目標；都不通時改用 `http://127.0.0.1:<extension_server_port>`。
+- header：`X-Codeium-Csrf-Token: <token>`、`Connect-Protocol-Version: 1`；body：`{"metadata":{"ideName":"antigravity","extensionName":"antigravity","locale":"en","ideVersion":"unknown"}}`。憑證為自簽，**只對 127.0.0.1 停用驗證**（另一個 HTTP agent，拒絕非本機網址）。
+- 額度優先取 `RetrieveUserQuotaSummary`：`response.groups[].buckets[]` 的 `remainingFraction`、`resetTime`、`window`（`"5h"`／`"weekly"`）。通用名稱（「Weekly Limit Remaining」）改為「{組名}・5 小時／每週」，組名去掉結尾的「Models」；有專屬名稱的（例：「Gemini 4 Argon Weekly」）照原名。後備為 `GetUserStatus` 的 `clientModelConfigs[].quotaInfo`，分成 Gemini 與 Claude + GPT 兩組取剩最少者。
+- 找不到行程時為 `NotRunning`：不算失敗、不加警示標記，卡片以一般文字提示「Antigravity 未執行，開啟 App 後會自動更新」。
+- 備註：從 VS Code 終端機啟動 Antigravity 時，若環境變數 `ELECTRON_RUN_AS_NODE=1`（VS Code 擴充主機會設定）會讓它直接退出；這只影響開發測試，不影響 AIBar。
+
+**Command Code 回應解析**
+
+- `credits.windowLimits.fiveHour`、`weekly`：`used / cap` 為已使用比例，`resetAt` 為毫秒（0 表示視窗尚未開始，不顯示重置時間）。
+- 每月：方案月額度（訂閱 `status` 為 `active` 時）與剩餘 `monthlyCredits` 取大者，加上 `purchasedCredits`、`freeCredits` 為總額；已用 = 總額 − 剩餘。重置時間為訂閱的 `currentPeriodEnd`，視窗長度為 `currentPeriodStart` 到 `currentPeriodEnd`。算法與 CLI 的 `/usage` 一致。
+- 卡片另顯示「本期已用 $4.33 / $10.00」。
+
+**OpenRouter 回應解析**
+
+- `/api/v1/key` 的 `data.limit`（美元）有值時，顯示一個額度視窗：名稱依 `limit_reset`（`daily`／`weekly`／`monthly` →「每日上限／每週上限／每月上限」，null →「Key 上限」），已用 = (`limit` − `limit_remaining`) / `limit`；重置時間依 UTC 午夜、週一、每月 1 日推算。
+- `/api/v1/credits` 的 `data.total_credits`、`total_usage` 取得到時，顯示「儲值餘額」視窗（無重置）與「本期已用 $x / $y」；取不到（部分 key 沒有權限）時只顯示 `usage_monthly`（「本月已用 $x（無上限）」）。
+- 401／403 視為 key 無效，提示到設定重新輸入。
 
 **共通規則**
 
@@ -140,9 +166,12 @@ flowchart BT
 ```rust
 pub trait UsageProvider: Send + Sync {
     fn id(&self) -> &'static str;
-    fn display_name(&self) -> &'static str;
-    /// 憑證檔是否存在（只檢查檔案，不讀內容）；用於首次啟動自動偵測
+    /// 憑證是否存在（只檢查，不讀內容）；用於首次啟動自動偵測
     fn credentials_present(&self) -> bool;
+    /// 目前登入帳號的雜湊（只讀本機檔案，不連網），用於丟棄別的帳號的快照
+    fn current_account_hash(&self) -> Option<String>;
+    /// 背景刷新間隔（預設 5 分鐘，Claude 10 分鐘）
+    fn refresh_interval(&self) -> Duration;
     fn fetch(&self) -> Result<Snapshot, FetchFailure>;
 }
 
@@ -151,8 +180,13 @@ pub struct Snapshot {
     pub plan: Option<String>,              // 方案名稱，例如「Max 5x」「Plus」
     pub account_hash: String,              // 帳號識別的雜湊，不存原始 id
     pub windows: Vec<UsageWindow>,
-    pub credits: Option<Credits>,          // v2：Command Code 這類以金額計的 Provider
+    pub credits: Option<Credits>,          // 金額型額度（Command Code、OpenRouter）
     pub fetched_at: SystemTime,
+}
+
+pub struct Credits {
+    pub used: f64,                         // 本期已用（美元）
+    pub limit: f64,                        // 上限（美元）；0 表示無上限
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -160,6 +194,7 @@ pub struct UsageWindow {
     pub name: String,                      // 例如「5 小時」「每週」「每週・Fable」
     pub used_percent: f64,                 // 0.0–100.0
     pub resets_at: Option<SystemTime>,
+    pub window_secs: Option<u64>,          // 視窗長度，用於計算進度；推不出來時為 None
 }
 
 #[derive(Clone, Debug)]
@@ -169,7 +204,7 @@ pub enum FetchFailure {
     RateLimited { retry_at: SystemTime },  // 回應 429
     Network,                               // 逾時、連線失敗、5xx
     BadResponse,                           // 回應格式無法解析
-    NotRunning,                            // v1：Antigravity 未執行
+    NotRunning,                            // Antigravity 未執行（不算失敗）
 }
 
 /// 排程器交給 UI 的每個 Provider 狀態
@@ -179,6 +214,7 @@ pub struct ProviderStatus {
     pub snapshot: Option<Snapshot>,
     pub last_failure: Option<FetchFailure>, // 最近一次刷新成功時為 None
     pub refreshing: bool,
+    pub refresh_interval: Duration,
 }
 ```
 
@@ -198,7 +234,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 
 - **焦點 Provider**：主視窗停在「總覽」時為排序第一的啟用 Provider；切到某個 Provider 頁籤時為該 Provider。最後選的頁籤存入 `config.json`，視窗隱藏或重開機後沿用。
 - 圖示中央的數字是焦點 Provider 各額度視窗中**剩餘最少**者的剩餘百分比（已重置的視窗以剩 100% 計）；100% 顯示「滿」。不論設定為顯示剩餘或已使用，圖示一律顯示剩餘。
-- 外框為焦點 Provider 的代表色（Claude 橘、Codex 青、Antigravity 綠、Command Code 紫）。
+- 外框為焦點 Provider 的代表色（Claude 橘、Codex 青、Antigravity 綠、Command Code 紫、OpenRouter 藍紫）。
 - 剩 10%–29% 時底色轉黃、低於 10% 轉紅；焦點 Provider 為舊快照或沒有快照時外框轉灰、數字變淡（沒有快照顯示「–」）。
 - 焦點 Provider 有失敗原因時右下角疊加「!」警示標記（`NotRunning` 除外）。
 - 以 GDI 依目前 DPI 的小圖示尺寸繪製文字（不縮放點陣），不需另備圖檔。
@@ -223,7 +259,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 - **額度視窗**：第一行為名稱、「剩餘 72%」（或「已使用 28%」，依設定）與重置倒數；第二行為進度條，長度代表所選顯示方式的量，顏色平常為 Provider 代表色，剩 10%–29% 轉黃、低於 10% 轉紅；第三行為進度說明。
 - **進度刻度**：可推得視窗長度時（Codex 的 `limit_window_seconds`；Claude 的 `session` 5 小時、`weekly_*` 7 天），進度條上以白色刻度標出「依時間比例此刻應剩的量」，第三行寫「比預期少用 N% · 可撐到重置」或「比預期多用 N% · 約 X 後用完」（以目前平均速度推算用完時間，早於重置才顯示）。推不出視窗長度時不顯示刻度與說明。
 - 重置倒數：24 小時內顯示「2 時 13 分後重置」，超過 24 小時顯示「3 天 16 小時後重置」，重置時間已過顯示「已重置」；Provider 頁籤另顯示絕對時間（「今天 01:10」「11/13（五）16:00」）。
-- 金額型 Provider（v2 Command Code）顯示「已用 / 額度」的美金數字與進度條。
+- 金額型 Provider（Command Code、OpenRouter）在卡片標題下顯示「本期已用 $4.33 / $10.00」，Provider 頁籤的資訊列另有「費用」一列。
 - 「更新於 N 分鐘前」與重置倒數每 30 秒重新計算。
 - 配色跟隨 Windows 深色／淺色模式。
 
@@ -245,7 +281,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 | `RateLimited` | 限流中，HH:MM 自動重試 |
 | `Network` | 無法連線，下次排程將重試 |
 | `BadResponse` | 回應格式改變 |
-| `NotRunning` | 未執行（Antigravity） |
+| `NotRunning` | Antigravity 未執行，開啟 App 後會自動更新（一般文字，非警示） |
 
 **右鍵選單**
 
@@ -256,27 +292,32 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 
 **設定視窗**
 
-- 一般視窗，左側分類：一般、Provider、通知（v2）、關於。由主視窗的設定按鈕或右鍵選單「設定…」開啟。
+- 一般視窗，左側分類：一般、Provider、通知、關於。由主視窗的設定按鈕或右鍵選單「設定…」開啟。
 - 一般：開機時自動啟動（開關）、用量顯示方式（剩餘／已使用，預設剩餘）。
-- Provider：每個 Provider 一列，含 ▲▼ 排序按鈕、代表色字母方塊、偵測狀態（例如「已偵測到 Claude Code 登入 · Pro」）與啟用開關；尚未推出的 Provider 顯示版本並停用開關。
+- Provider：每個 Provider 一列，含 ▲▼ 排序按鈕、代表色字母方塊、偵測狀態（例如「已偵測到 Claude Code 登入 · Pro」）與啟用開關。OpenRouter 另有一列密碼輸入框與「儲存」「清除」按鈕：儲存後自動啟用並立即刷新，清除後停用；沒有 key 時開關停用。
+- 通知：「額度快用完時通知」開關（預設開啟）。
 - 關於：版本、簡介與 `AboutSlint`（Slint 授權要求）。
 - 變更立即生效並寫入 `config.json`，不需按儲存。
 
-**通知（v2）**
+**通知**
 
-- 每個額度視窗跨過 80% 與 95% 時各發一次 Windows Toast；該視窗重置後才會再次通知（Toast 使用的 crate 待選）。
-- 已通知紀錄存於 `snapshots.json`，重開機不重複通知。
+- 每個額度視窗的**已使用量**跨過 80% 與 95% 時各發一次 Windows Toast（標題「Codex 每週 已用 82%」，內文「剩餘 18%，1 天 18 小時後重置」）；直接跳過 80% 時只發一則。該視窗重置（重置時間改變）後才會再次通知。
+- 以 WinRT `ToastNotificationManager` 發送，不需額外 crate。免安裝程式需要 AppUserModelID：啟動時登錄 `HKCU\Software\Classes\AppUserModelId\RayLiu.AIBar`（`DisplayName`、`IconUri` 指向 `%APPDATA%\AiBar\icon.png`），並以 `SetCurrentProcessExplicitAppUserModelID` 套用。
+- 已通知紀錄存於 `notified.json`（鍵為「Provider|額度視窗|重置時間」），重開機不重複通知；重置時間已過的紀錄自動清除。
+- `aibar --notify-test` 發一則測試通知，用來確認 Windows 通知設定沒有擋住 AIBar。
 
 ## 8. 設定、儲存與資安
 
-程式只讀取 CLI 已有的憑證；自己寫入的檔案都在 `%APPDATA%\AiBar\`，唯一需要保管的機密是 Command Code 的 cookie（v2），以 DPAPI 加密後存放。
+程式只讀取 CLI 已有的憑證；自己寫入的檔案都在 `%APPDATA%\AiBar\`，唯一需要保管的機密是 OpenRouter 的 API key，以 DPAPI 加密後存放。
 
 | 檔案 | 內容 | 說明 |
 | --- | --- | --- |
 | `config.json` | Provider 啟用與排序、顯示方式、最後選的頁籤、視窗位置與大小 | 由設定視窗與主視窗讀寫，使用者不需編輯 |
-| `snapshots.json` | 各 Provider 的快照、v2 的已通知紀錄 | 每次刷新成功時寫入，啟動時讀取；讀不到或格式錯誤時視為沒有快照 |
+| `snapshots.json` | 各 Provider 的快照（含金額型額度） | 每次刷新成功時寫入，啟動時讀取；讀不到或格式錯誤時視為沒有快照 |
 | `aibar.log` | 日誌（時間、Provider、狀態碼、耗時、錯誤種類） | 超過 1 MB 改名為 `aibar.log.old`，最多保留兩份；debug 版同時印到主控台；單元測試不寫入 |
-| `secrets.bin` | Command Code cookie（v2） | `CryptProtectData`（範圍 `CurrentUser`）加密 |
+| `secrets.bin` | OpenRouter API key（`{"openrouter": "…"}` 整份加密） | `CryptProtectData`（範圍 `CurrentUser`）加密 |
+| `notified.json` | 已通知紀錄 | 見第 7 節「通知」 |
+| `icon.png` | Toast 通知用的 App 圖示 | 啟動時產生 |
 
 ```json
 {
@@ -284,15 +325,17 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
     { "id": "claude", "enabled": true },
     { "id": "codex", "enabled": true },
     { "id": "antigravity", "enabled": false },
-    { "id": "commandcode", "enabled": false }
+    { "id": "commandcode", "enabled": true },
+    { "id": "openrouter", "enabled": false }
   ],
   "display": "remaining",
   "selected_tab": "overview",
-  "window": { "x": 1450, "y": 420, "width": 460, "height": 640 }
+  "window": { "x": 1450, "y": 420, "width": 460, "height": 640 },
+  "notifications": true
 }
 ```
 
-- 首次啟動（`config.json` 不存在）：憑證檔存在的 Provider 預設啟用，其餘停用，結果寫入 `config.json`；之後只依 config。`providers` 的陣列順序即顯示順序。
+- 首次啟動（`config.json` 不存在）：憑證檔存在的 Provider 預設啟用，其餘停用，結果寫入 `config.json`；之後只依 config。`providers` 的陣列順序即顯示順序；之後新增的 Provider 會附加在最後，偵測得到登入憑證的預設啟用。
 - 刷新間隔（Claude 10 分鐘、Codex 5 分鐘）、開啟視窗自動刷新門檻（刷新間隔的一半）、手動刷新下限（1 分鐘）、顏色門檻（70／90）、通知門檻（80／95）皆為程式常數，不可設定。
 - 開機自啟以登錄檔為唯一來源：`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，設定視窗的開關直接讀寫登錄檔，不需系統管理員權限。使用者在工作管理員或「設定 → 應用程式 → 啟動」停用時，Windows 會在 `Explorer\StartupApproved\Run` 記下停用標記（第一個位元組為奇數）：判斷是否啟用要一併檢查，從 AIBar 開啟時清除該標記。
 
@@ -301,9 +344,10 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 1. Claude 與 Codex 的 token 只在記憶體中使用，不複製、不寫入任何檔案、不寫入日誌。
 2. 絕不修改 CLI 的憑證檔，避免破壞使用者登入狀態。
 3. `snapshots.json` 不含 token、email、原始帳號 id；帳號只存雜湊值（Claude 用 `organizationUuid`、Codex 用 `account_id`）。
-4. Command Code cookie 以 `CryptProtectData`（範圍 `CurrentUser`）加密後存於 `secrets.bin`。
-5. 日誌不記錄 token、cookie 或回應內容，只記錄 Provider、狀態碼與耗時。
-6. 網路請求僅連向各 Provider 的官方網域，不使用任何第三方分析或回報服務。
+4. OpenRouter API key 以 `CryptProtectData`（範圍 `CurrentUser`）加密後存於 `secrets.bin`；設定視窗只顯示「已儲存」，不回填 key。
+5. 日誌不記錄 token、API key 或回應內容，只記錄 Provider、狀態碼與耗時。
+6. 停用 TLS 憑證驗證只用於 Antigravity 的本機 language server，且只接受 `127.0.0.1` 網址。
+7. 網路請求僅連向各 Provider 的官方網域，不使用任何第三方分析或回報服務。
 
 ## 9. 刷新與錯誤處理
 
@@ -332,7 +376,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 | 網路逾時、連線失敗或 5xx | `Network` | 下次排程照常重試 |
 | 回應格式無法解析 | `BadResponse` | 日誌記錄狀態碼（不含內容） |
 | 回應 429 | `RateLimited` | 該 Provider 退避：間隔加倍，上限 30 分鐘；有 `Retry-After`（秒）且更晚時以它為準；成功後恢復原本的刷新間隔 |
-| Antigravity 行程不存在（v1） | `NotRunning` | 不視為錯誤，不加警示標記 |
+| Antigravity 行程不存在 | `NotRunning` | 不視為錯誤，不加警示標記 |
 
 所有情況都保留既有快照。
 
@@ -368,13 +412,15 @@ AIBar/
     ├── snapshot_store.rs     // snapshots.json 讀寫
     ├── autostart.rs          // 登錄檔 Run 鍵與 StartupApproved
     ├── applog.rs             // 日誌與輪替（log! 巨集）
-    ├── secret.rs             // DPAPI 加解密（v2）
+    ├── secret.rs             // DPAPI 加解密（OpenRouter API key）
+    ├── notify.rs             // Toast 通知與已通知紀錄
     └── providers/
         ├── mod.rs            // UsageProvider trait
         ├── claude.rs
         ├── codex.rs
-        ├── antigravity.rs    // v1
-        └── command_code.rs   // v2
+        ├── antigravity.rs    // v1：本機 language server 探測
+        ├── command_code.rs   // v2
+        └── openrouter.rs     // v3
 ```
 
 **專案重點**
@@ -408,22 +454,23 @@ cargo build --release
 flowchart LR
     M0["驗證端點 ✓<br/>Claude 與 Codex 用量端點<br/>與憑證檔位置已實測"]
     M1["v0<br/>Claude 與 Codex<br/>托盤、主視窗、選單<br/>快照存檔、開機自啟"]
-    M2["v1<br/>Antigravity 探測"]
-    M3["v2<br/>Command Code<br/>手動貼 cookie<br/>80% 與 95% 通知"]
+    M2["v1 ✓<br/>Antigravity 探測"]
+    M3["v2 ✓<br/>Command Code<br/>80% 與 95% 通知"]
+    M4["v3 ✓<br/>OpenRouter"]
 
-    M0 --> M1 --> M2 --> M3
+    M0 --> M1 --> M2 --> M3 --> M4
 
     G0{{"端點與憑證路徑確認"}}
     G1{{"數字與官方顯示一致"}}
     G2{{"開啟時顯示用量<br/>未開啟顯示「未執行」"}}
-    G3{{"Cookie 過期有提示<br/>不會當機"}}
+    G3{{"憑證失效有提示<br/>不會當機"}}
+    G4{{"key 無效有提示"}}
 
     M0 -.- G0
     M1 -.- G1
     M2 -.- G2
     M3 -.- G3
-
-    style M1 stroke:#3b82f6,stroke-width:3px
+    M4 -.- G4
 ```
 
 v0 先交付 Claude 與 Codex，其餘依序加入；六角形為進到下一階段前的驗收標準。
@@ -431,8 +478,9 @@ v0 先交付 Claude 與 Codex，其餘依序加入；六角形為進到下一階
 1. ~~用 curl 或 PowerShell 實測 Claude 與 Codex 端點~~（2026-11-09 完成）。
 2. 安裝 Rust 工具鏈與 C++ 建置工具（第 10 節），~~建立 Cargo 專案並跑通 Slint 的托盤與主視窗~~（2026-11-09 完成）；接著完成資料模型、設定與快照存取。
 3. 實作 Claude 與 Codex Provider、排程與退避，接上托盤圖示、主視窗與右鍵選單（含開機自啟、關於）。
-4. 加入 Antigravity 探測（v1）。
-5. 加入 Command Code 手動 cookie 與 Toast 通知（v2）。
+4. ~~加入 Antigravity 探測（v1）~~（2026-11-10 完成）。
+5. ~~加入 Command Code 與 Toast 通知（v2）~~（2026-11-10 完成；改用 CLI 的 API key，見 ADR-0004）。
+6. ~~加入 OpenRouter（v3）~~（2026-11-10 完成）。
 
 ## 12. 風險與待驗證事項
 
@@ -444,8 +492,8 @@ v0 先交付 Claude 與 Codex，其餘依序加入；六角形為進到下一階
 | 憑證檔位置或格式改變 | 無法讀取 token | 顯示「找不到登入資訊」；路徑集中於 Provider 模組 |
 | Claude token 約 8 小時過期 | 長時間未開 Claude Code 時無新資料 | 不自行 refresh（ADR-0001）；保留快照並提示執行 CLI |
 | 頻繁請求被限流（實測 Claude 端點以帳號計，同帳號在其他裝置或工具查詢也會累計；429 回應不帶限流標頭） | 更久拿不到資料 | Claude 背景 10 分鐘；開啟視窗門檻為刷新間隔一半；手動刷新 1 分鐘下限；遵守 429 退避與 Retry-After；失敗時保留快照；啟動時快照未滿一個間隔不刷新 |
-| Chromium cookie 在 Windows 上加密複雜 | Command Code 無法自動取得 cookie | 只做手動貼 cookie，不做自動匯入 |
-| Antigravity 本機探測屬實驗性做法 | 版本更新後可能失效 | 放在 v1，失效時顯示「未執行」或錯誤，不影響其他 Provider |
+| Command Code 帳務 API（`/alpha/…`）為非公開且標示 alpha | 改版後無法取得資料 | 端點集中於單一模組；訂閱資訊取不到時仍顯示 5 小時與每週視窗 |
+| Antigravity 本機探測屬實驗性做法；Google 未提供官方額度 API | 版本更新後可能失效 | 只讀本機 language server、不連 Google；額度摘要失敗時退回 GetUserStatus；失效時顯示錯誤，不影響其他 Provider |
 | 帳號層級的使用規範 | 使用非公開端點可能不被官方支援 | 僅供個人或少數同事使用，低頻率輪詢 |
 | 首次使用 Rust，編譯錯誤與所有權概念需適應 | 開發時程可能超出預期 | 由 AI 撰寫、開發者逐檔閱讀；採用背景執行緒加 channel 的簡單並行模型，不引入 async runtime |
 | Slint 的系統托盤是 1.17 才加入的新功能，仍有缺陷（1.18.1 若在圖示設定前建立任何視窗，托盤會建立失敗且不重試） | 托盤圖示不出現 | 已以原型驗證（2026-11-09）；`Tray::new()` 後立即設定圖示，再建立其他視窗 |
@@ -459,5 +507,6 @@ v0 先交付 Claude 與 Codex，其餘依序加入；六角形為進到下一階
 - [x] Slint 托盤的點擊事件能否取得位置（`clicked` 不帶座標；改用一般視窗後不再需要，見 ADR-0002）
 - [x] Slint 托盤能否偵測左鍵點擊與右鍵選單、能否動態更換圖示與 Tooltip
 - [x] Windows 睡眠恢復事件的取得方式（不監聽電源事件，改由排程器每分鐘以系統時間檢查）
-- [ ] Antigravity 在 Windows 上 language server 的行程名稱與命令列參數（v1）
-- [ ] Command Code 帳務頁面的資料來源與所需 cookie 名稱（v2）
+- [x] Antigravity 在 Windows 上 language server 的行程名稱與命令列參數（`language_server.exe`，`--csrf_token`、`--app_data_dir antigravity`）
+- [x] Command Code 用量的資料來源（CLI 的 `auth.json` API key 與 `/alpha/billing/*`，不需 cookie）
+- [x] OpenRouter 額度 API（`/api/v1/key`、`/api/v1/credits`）
