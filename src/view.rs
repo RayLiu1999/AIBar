@@ -17,14 +17,8 @@ const LOW_REMAINING: f64 = 30.0;
 /// 剩餘低於此值為「危急」（紅）
 const CRITICAL_REMAINING: f64 = 10.0;
 
-/// 用量顯示方式
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum DisplayMode {
-    #[default]
-    Remaining,
-    #[allow(dead_code)] // 設定視窗完成後才能切換
-    Used,
-}
+/// 用量顯示方式（剩餘／已使用），存在 config.json
+pub use crate::config::Display as DisplayMode;
 
 /// Provider 的固定資訊
 pub struct ProviderMeta {

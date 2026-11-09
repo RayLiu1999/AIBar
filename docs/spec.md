@@ -58,7 +58,7 @@ Nov 9, 2026 · @Ray（2026-11-09 依規劃訪談結果修訂；名詞定義見�
 | 渲染器 | 先用軟體渲染器 | 記憶體最省；實測後再決定是否改用 GPU 渲染器 |
 | 發佈 | `cargo build --release` | 單一 exe；release 設定開啟 LTO、`strip`、`panic = "abort"` 縮小體積 |
 
-**授權**：採用 Slint 的 **Royalty-free** 授權，可用於不公開原始碼的桌面應用，條件是揭露使用 Slint：右鍵選單提供「關於」，開啟後顯示 `AboutSlint` 元件。
+**授權**：採用 Slint 的 **Royalty-free** 授權，可用於不公開原始碼的桌面應用，條件是揭露使用 Slint：右鍵選單的「關於」開啟設定視窗的關於頁，其中顯示 `AboutSlint` 元件。
 
 **替代方案（未採用）**
 
@@ -213,7 +213,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 - 一般視窗：有標題列，可拖動、可調整大小（最小 360×200）；程式啟動時不顯示，只有托盤。
 - 左鍵點擊托盤圖示：視窗不在最前面時顯示並移到最前面，已在最前面則隱藏。點托盤會讓視窗先失焦，故失焦 400ms 內仍視為在最前面。
 - 按 X 或 Esc 隱藏回托盤，不結束程式；結束只從右鍵選單。
-- 第一次開啟時出現在游標所在螢幕工作區的右下角；之後保留使用者拖到的位置與大小（目前僅限本次執行，之後存入 `config.json`）。
+- 第一次開啟時出現在游標所在螢幕工作區的正中央；隱藏、按 X 或結束程式時把位置與大小存入 `config.json`，之後沿用。存下的位置已不在任何螢幕上（例如外接螢幕拔除）時退回置中。
 - 顯示後約 30ms 以 `SetForegroundWindow` 取得前景（托盤點擊後 Shell 會授予前景權限）。
 - 視窗只建立一次，隱藏時保留；不在每次開啟時重建（重建會經過預設大小的過渡，造成位置跳動與畫面殘缺）。
 - 開啟時，若某 Provider 的快照超過 2 分鐘且不在退避期間，自動刷新該 Provider（Claude 端點限流嚴格，門檻不宜更短）。
@@ -251,14 +251,15 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 
 - 立即刷新
 - 設定…
-- 關於（顯示 `AboutSlint`）
+- 關於（開啟設定視窗的關於頁）
 - 結束
 
 **設定視窗**
 
 - 一般視窗，左側分類：一般、Provider、通知（v2）、關於。由主視窗的設定按鈕或右鍵選單「設定…」開啟。
 - 一般：開機時自動啟動（開關）、用量顯示方式（剩餘／已使用，預設剩餘）。
-- Provider：每個 Provider 一列，含拖曳排序、代表色字母方塊、偵測狀態（例如「已偵測到 Claude Code 登入 · Pro」）與啟用開關；尚未推出的 Provider 顯示版本並停用開關。
+- Provider：每個 Provider 一列，含 ▲▼ 排序按鈕、代表色字母方塊、偵測狀態（例如「已偵測到 Claude Code 登入 · Pro」）與啟用開關；尚未推出的 Provider 顯示版本並停用開關。
+- 關於：版本、簡介與 `AboutSlint`（Slint 授權要求）。
 - 變更立即生效並寫入 `config.json`，不需按儲存。
 
 **通知（v2）**
@@ -293,7 +294,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 
 - 首次啟動（`config.json` 不存在）：憑證檔存在的 Provider 預設啟用，其餘停用，結果寫入 `config.json`；之後只依 config。`providers` 的陣列順序即顯示順序。
 - 刷新間隔（5 分鐘）、開啟視窗自動刷新門檻（2 分鐘）、顏色門檻（70／90）、通知門檻（80／95）皆為程式常數，不可設定。
-- 開機自啟以登錄檔為唯一來源：`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，設定視窗的開關直接讀寫登錄檔，不需系統管理員權限。
+- 開機自啟以登錄檔為唯一來源：`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，設定視窗的開關直接讀寫登錄檔，不需系統管理員權限。使用者在工作管理員或「設定 → 應用程式 → 啟動」停用時，Windows 會在 `Explorer\StartupApproved\Run` 記下停用標記（第一個位元組為奇數）：判斷是否啟用要一併檢查，從 AIBar 開啟時清除該標記。
 
 **機密處理原則**
 
@@ -352,18 +353,19 @@ AIBar/
 ├── ui/
 │   ├── app.slint             // 匯出所有頂層元件
 │   ├── tray.slint            // SystemTrayIcon 與右鍵選單
-│   ├── main_window.slint     // 主視窗：精簡卡片、進度條
-│   └── about.slint           // 關於（AboutSlint）
+│   ├── main_window.slint     // 主視窗：頁籤、卡片、進度條與進度刻度
+│   └── settings.slint        // 設定視窗：一般、Provider、關於
 └── src/
     ├── main.rs               // 進入點、單一執行個體、事件迴圈
     ├── model.rs              // Snapshot、UsageWindow、FetchFailure、ProviderStatus
-    ├── view.rs               // 模型轉畫面：卡片、托盤顏色與 Tooltip、時間文字
-    ├── main_window.rs        // 主視窗顯示／隱藏、初始位置、前景
-    ├── tray_icon.rs          // 繪製托盤圖示
+    ├── view.rs               // 模型轉畫面：卡片、進度、托盤內容與 Tooltip、時間文字
+    ├── main_window.rs        // 主視窗顯示／隱藏、位置記憶、前景
+    ├── tray_icon.rs          // 繪製托盤數字圖示（GDI 文字）與 App 圖示
+    ├── platform.rs           // 剪貼簿、開啟網址
     ├── scheduler.rs          // 刷新排程與退避（背景執行緒 + channel）
     ├── config.rs             // config.json 讀寫、首次啟動自動偵測
     ├── snapshot_store.rs     // snapshots.json 讀寫
-    ├── autostart.rs          // 登錄檔 Run 鍵
+    ├── autostart.rs          // 登錄檔 Run 鍵與 StartupApproved
     ├── log.rs                // 日誌與輪替
     ├── secret.rs             // DPAPI 加解密（v2）
     └── providers/

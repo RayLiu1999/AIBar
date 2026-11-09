@@ -1,0 +1,390 @@
+// 設定視窗（規格書第 7 節）：左側分類，右側內容；變更立即生效
+import { Palette, Switch, ComboBox, ScrollView, AboutSlint } from "std-widgets.slint";
+
+// 設定視窗中的一個 Provider
+export struct ProviderSetting {
+    id: string,
+    name: string,
+    mono: string,
+    accent: color,
+    status: string,      // 「已偵測到 Claude Code 登入 · Pro」「v1 推出」
+    enabled: bool,
+    available: bool,     // 尚未推出的 Provider 不能啟用
+}
+
+global SettingsTheme {
+    out property <bool> dark: Palette.color-scheme == ColorScheme.dark;
+    out property <color> window-bg: dark ? #202020 : #f3f3f3;
+    out property <color> row-bg: dark ? #2b2b2b : #ffffff;
+    out property <color> nav-selected: dark ? #2d2d2d : #e6e6e6;
+    out property <color> hover: dark ? #2a2a2a : #ececec;
+    out property <color> text: dark ? #f3f3f3 : #1b1b1b;
+    out property <color> subtext: dark ? #ababab : #5c5c5c;
+    out property <color> accent: dark ? #4CB5C1 : #217a85;
+}
+
+component NavItem inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected;
+    in property <string> badge;
+
+    callback clicked();
+
+    height: 36px;
+    border-radius: 6px;
+    background: root.selected ? SettingsTheme.nav-selected : ta.has-hover ? SettingsTheme.hover : transparent;
+    accessible-role: tab;
+    accessible-label: root.text;
+
+    Rectangle {
+        x: 0;
+        y: (parent.height - self.height) / 2;
+        width: 3px;
+        height: 16px;
+        border-radius: 2px;
+        background: root.selected ? SettingsTheme.accent : transparent;
+    }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        spacing: 8px;
+        Text {
+            text: root.text;
+            font-size: 13px;
+            color: SettingsTheme.text;
+            vertical-alignment: center;
+            horizontal-stretch: 0;
+        }
+        if root.badge != "": VerticalLayout {
+            alignment: center;
+            Rectangle {
+                border-width: 1px;
+                border-color: SettingsTheme.subtext;
+                border-radius: 4px;
+                HorizontalLayout {
+                    padding-left: 4px;
+                    padding-right: 4px;
+                    Text {
+                        text: root.badge;
+                        font-size: 10px;
+                        color: SettingsTheme.subtext;
+                    }
+                }
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// 一列設定：左側標題與說明，右側控制項
+component SettingRow inherits Rectangle {
+    in property <string> title;
+    in property <string> description;
+
+    background: SettingsTheme.row-bg;
+    border-radius: 6px;
+    min-height: 60px;
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: root.title;
+                font-size: 14px;
+                color: SettingsTheme.text;
+            }
+            if root.description != "": Text {
+                text: root.description;
+                font-size: 12px;
+                color: SettingsTheme.subtext;
+                wrap: word-wrap;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 0;
+            @children
+        }
+    }
+}
+
+// 小的文字按鈕（排序用）
+component SmallButton inherits Rectangle {
+    in property <string> text;
+    in property <string> label;
+    in property <bool> enabled: true;
+
+    callback clicked();
+
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    background: ta.has-hover && root.enabled ? SettingsTheme.hover : transparent;
+    accessible-role: button;
+    accessible-label: root.label;
+
+    Text {
+        text: root.text;
+        font-size: 12px;
+        color: root.enabled ? SettingsTheme.text : SettingsTheme.subtext.with-alpha(0.4);
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component SettingsWindow inherits Window {
+    // 0 一般、1 Provider、2 關於
+    in-out property <int> page;
+    in property <bool> autostart;
+    // 0 剩餘、1 已使用
+    in property <int> display-index;
+    in property <[ProviderSetting]> providers;
+    in property <string> version;
+    in property <image> window-icon;
+
+    callback autostart-toggled(bool);
+    callback display-changed(int);
+    callback provider-toggled(string, bool);
+    callback provider-moved(string, int);
+
+    title: "AIBar 設定";
+    icon: root.window-icon;
+    preferred-width: 760px;
+    preferred-height: 560px;
+    min-width: 600px;
+    min-height: 420px;
+    background: SettingsTheme.window-bg;
+
+    HorizontalLayout {
+        // 左側分類
+        VerticalLayout {
+            width: 200px;
+            padding: 8px;
+            spacing: 2px;
+            NavItem {
+                text: "一般";
+                selected: root.page == 0;
+                clicked => {
+                    root.page = 0;
+                }
+            }
+            NavItem {
+                text: "Provider";
+                selected: root.page == 1;
+                clicked => {
+                    root.page = 1;
+                }
+            }
+            NavItem {
+                text: "通知";
+                badge: "v2";
+                selected: false;
+            }
+            NavItem {
+                text: "關於";
+                selected: root.page == 2;
+                clicked => {
+                    root.page = 2;
+                }
+            }
+            Rectangle {
+                vertical-stretch: 1;
+            }
+        }
+
+        scroll := ScrollView {
+            horizontal-stretch: 1;
+            content-width: self.visible-width;
+            content-height: content.preferred-height;
+
+            content := VerticalLayout {
+                width: scroll.visible-width;
+                padding-left: 12px;
+                padding-right: 20px;
+                padding-top: 16px;
+                padding-bottom: 20px;
+                spacing: 4px;
+
+                if root.page == 0: VerticalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: "一般";
+                        font-size: 20px;
+                        font-weight: 700;
+                        color: SettingsTheme.text;
+                    }
+                    Rectangle {
+                        height: 12px;
+                    }
+                    SettingRow {
+                        title: "開機時自動啟動";
+                        description: "登入 Windows 後在托盤待命";
+                        Switch {
+                            checked: root.autostart;
+                            accessible-label: "開機時自動啟動";
+                            toggled => {
+                                root.autostart-toggled(self.checked);
+                            }
+                        }
+                    }
+                    SettingRow {
+                        title: "用量顯示方式";
+                        description: "主視窗的數字與進度條顯示剩餘量或已使用量；托盤圖示一律顯示剩餘";
+                        ComboBox {
+                            width: 140px;
+                            model: ["剩餘", "已使用"];
+                            current-index: root.display-index;
+                            accessible-label: "用量顯示方式";
+                            selected(value) => {
+                                root.display-changed(self.current-index);
+                            }
+                        }
+                    }
+                }
+
+                if root.page == 1: VerticalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: "Provider";
+                        font-size: 20px;
+                        font-weight: 700;
+                        color: SettingsTheme.text;
+                    }
+                    Text {
+                        text: "排序決定主視窗頁籤的順序；總覽時托盤顯示排在最前面的已啟用 Provider。";
+                        font-size: 12px;
+                        color: SettingsTheme.subtext;
+                        wrap: word-wrap;
+                    }
+                    Rectangle {
+                        height: 8px;
+                    }
+                    for p[i] in root.providers: Rectangle {
+                        background: SettingsTheme.row-bg;
+                        border-radius: 6px;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 16px;
+                            padding-top: 8px;
+                            padding-bottom: 8px;
+                            spacing: 10px;
+                            VerticalLayout {
+                                alignment: center;
+                                SmallButton {
+                                    text: "▲";
+                                    label: "上移 " + p.name;
+                                    enabled: i > 0;
+                                    clicked => {
+                                        root.provider-moved(p.id, -1);
+                                    }
+                                }
+                                SmallButton {
+                                    text: "▼";
+                                    label: "下移 " + p.name;
+                                    enabled: i < root.providers.length - 1;
+                                    clicked => {
+                                        root.provider-moved(p.id, 1);
+                                    }
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 26px;
+                                    height: 26px;
+                                    border-radius: 7px;
+                                    background: p.accent;
+                                    opacity: p.available ? 1 : 0.45;
+                                    Text {
+                                        text: p.mono;
+                                        font-size: 14px;
+                                        font-weight: 700;
+                                        color: #1b1b1b;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: p.name;
+                                    font-size: 14px;
+                                    color: SettingsTheme.text;
+                                }
+                                Text {
+                                    text: p.status;
+                                    font-size: 12px;
+                                    color: SettingsTheme.subtext;
+                                    wrap: word-wrap;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Switch {
+                                    checked: p.enabled;
+                                    enabled: p.available;
+                                    accessible-label: "啟用 " + p.name;
+                                    toggled => {
+                                        root.provider-toggled(p.id, self.checked);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if root.page == 2: VerticalLayout {
+                    spacing: 8px;
+                    Text {
+                        text: "關於";
+                        font-size: 20px;
+                        font-weight: 700;
+                        color: SettingsTheme.text;
+                    }
+                    Text {
+                        text: "AIBar " + root.version + "：Windows 系統匣 AI 用量工具";
+                        font-size: 14px;
+                        color: SettingsTheme.text;
+                    }
+                    Text {
+                        text: "借用 Claude Code 與 Codex CLI 已登入的憑證讀取用量，只讀不寫；不收集或回傳任何資料。";
+                        font-size: 12px;
+                        color: SettingsTheme.subtext;
+                        wrap: word-wrap;
+                    }
+                    Rectangle {
+                        height: 8px;
+                    }
+                    AboutSlint {
+                        preferred-height: 280px;
+                    }
+                }
+            }
+        }
+    }
+}

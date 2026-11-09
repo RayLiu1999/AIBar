@@ -1,15 +1,12 @@
 // 系統匣圖示與右鍵選單（規格書第 7 節）
 export component Tray inherits SystemTrayIcon {
-    // 圖示由 Rust 端依用量動態產生
+    // 圖示由 Rust 端依焦點 Provider 的剩餘量動態繪製
     in property <image> tray-icon;
     in property <string> tray-tooltip: "AIBar";
-    // 各 Provider 是否啟用
-    in-out property <bool> claude-enabled: true;
-    in-out property <bool> codex-enabled: true;
 
     callback left-clicked();
-    callback enabled-changed();
     callback refresh-now();
+    callback open-settings();
     callback show-about();
     callback quit();
 
@@ -19,29 +16,17 @@ export component Tray inherits SystemTrayIcon {
         root.left-clicked();
     }
 
-    changed claude-enabled => {
-        root.enabled-changed();
-    }
-    changed codex-enabled => {
-        root.enabled-changed();
-    }
-
     Menu {
-        MenuItem {
-            title: "Claude";
-            checkable: true;
-            checked <=> root.claude-enabled;
-        }
-        MenuItem {
-            title: "Codex";
-            checkable: true;
-            checked <=> root.codex-enabled;
-        }
-        MenuSeparator { }
         MenuItem {
             title: "立即刷新";
             activated => {
                 root.refresh-now();
+            }
+        }
+        MenuItem {
+            title: "設定…";
+            activated => {
+                root.open-settings();
             }
         }
         MenuItem {
@@ -50,6 +35,7 @@ export component Tray inherits SystemTrayIcon {
                 root.show-about();
             }
         }
+        MenuSeparator { }
         MenuItem {
             title: "結束";
             activated => {
