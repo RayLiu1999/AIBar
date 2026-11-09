@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+# 本地時區格式化重置時間
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 # 只啟用需要的 feature：winit 後端 + 軟體渲染器 + 系統托盤
 slint = { version = "1.18.1", default-features = false, features = [
     "std",
@@ -18,8 +20,6 @@ windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
     "Win32_UI_HiDpi",
-    "Win32_UI_Shell",
-    "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",
 ] }
 

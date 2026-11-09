@@ -11,7 +11,7 @@ Nov 9, 2026 · @Ray（2026-11-09 依規劃訪談結果修訂；名詞定義見�
 **目標**
 
 - 在系統匣看到最高用量，顏色隨用量變化。
-- 點擊托盤圖示彈出面板，以卡片與進度條顯示每個 Provider 的各個額度視窗與重置倒數；打開面板時資料是新的。
+- 點擊托盤圖示開啟主視窗，以卡片與進度條顯示每個 Provider 的各個額度視窗與重置倒數；開啟視窗時資料是新的。
 - 免輸入密碼：借用 CLI 已登入的 OAuth token。
 - 最輕量：單一 Rust 執行檔（exe）、免安裝 runtime、無背景服務、無資料庫。
 - 所有使用者設定都從托盤選單操作，使用者不需要編輯任何檔案。
@@ -21,8 +21,8 @@ Nov 9, 2026 · @Ray（2026-11-09 依規劃訪談結果修訂；名詞定義見�
 **成功標準**
 
 - v0 完成後，Claude 與 Codex 用量能正確顯示（首次使用 Rust，時程預留緩衝）。
-- 資料與官方網頁或 CLI 顯示的用量誤差在一個背景刷新週期內；打開面板時誤差在 30 秒內。
-- 面板關閉時常駐記憶體盡量壓低、閒置時 CPU 接近 0，啟動後數秒內出現托盤圖示（具體數值待開發後實測再定）。
+- 資料與官方網頁或 CLI 顯示的用量誤差在一個背景刷新週期內；開啟視窗時誤差在 30 秒內。
+- 視窗隱藏時常駐記憶體盡量壓低、閒置時 CPU 接近 0，啟動後數秒內出現托盤圖示（具體數值待開發後實測再定）。
 
 ## 2. 範圍
 
@@ -30,13 +30,13 @@ Nov 9, 2026 · @Ray（2026-11-09 依規劃訪談結果修訂；名詞定義見�
 
 | 版本 | 內容 | 驗收標準 |
 | --- | --- | --- |
-| v0 | Claude、Codex Provider；托盤圖示（顏色隨最高用量變化、警示標記、灰色）；彈出面板顯示各額度視窗用量與重置倒數；背景每 5 分鐘刷新、打開面板時自動刷新；手動刷新；失敗時保留快照並顯示失敗原因；快照存檔（重開機後仍可顯示）；429 退避；右鍵選單（Provider 啟用開關、立即刷新、開機自啟、關於、結束） | 兩個 Provider 的數字與官方顯示一致 |
+| v0 | Claude、Codex Provider；托盤圖示（顏色隨最高用量變化、警示標記、灰色）；主視窗顯示各額度視窗用量與重置倒數；背景每 5 分鐘刷新、開啟視窗時自動刷新；手動刷新；失敗時保留快照並顯示失敗原因；快照存檔（重開機後仍可顯示）；429 退避；右鍵選單（Provider 啟用開關、立即刷新、開機自啟、關於、結束） | 兩個 Provider 的數字與官方顯示一致 |
 | v1 | Antigravity Provider（本機 language server 探測） | Antigravity 開啟時能顯示用量，未開啟時顯示「未執行」 |
 | v2 | Command Code Provider（手動貼 cookie，DPAPI 加密儲存）；80% 與 95% 的 Windows Toast 通知 | Cookie 過期時有明確提示，不會當機 |
 
 **刻意不做**
 
-- 用量歷史圖表與獨立的設定視窗（面板只顯示目前用量，設定只放在右鍵選單）。
+- 用量歷史圖表與獨立的設定視窗（主視窗只顯示目前用量，設定只放在右鍵選單）。
 - 可調整的刷新間隔與通知門檻（固定為程式常數）。
 - 瀏覽器 cookie 自動匯入（Windows 上 Chromium cookie 加密複雜，是最大的工程黑洞）。
 - Token refresh 流程（見 ADR-0001；過期時提示使用者先執行一次對應 CLI）。
@@ -62,7 +62,7 @@ Nov 9, 2026 · @Ray（2026-11-09 依規劃訪談結果修訂；名詞定義見�
 
 **替代方案（未採用）**
 
-- Tauri v2（Rust + WebView2）：UI 最自由，但開啟面板時 WebView2 的記憶體較高。
+- Tauri v2（Rust + WebView2）：UI 最自由，但開啟視窗時 WebView2 的記憶體較高。
 - egui：很輕，但外觀偏工具風，不易做出好看的卡片。
 - C# WinForms / WPF：開發最快，但需要 .NET runtime，啟動與記憶體較重，WinForms 也很難做出好看的 UI。
 
@@ -94,7 +94,7 @@ flowchart BT
 
     Providers --> Scheduler["RefreshScheduler<br/>並行刷新、退避，單一失敗不影響其他"]
     Scheduler <--> Store["SnapshotStore<br/>快照與通知紀錄（snapshots.json）"]
-    Scheduler -- ProviderStatus --> UI["UI 層（Slint）<br/>托盤圖示、Tooltip、彈出面板、右鍵選單、Toast 通知"]
+    Scheduler -- ProviderStatus --> UI["UI 層（Slint）<br/>托盤圖示、Tooltip、主視窗、右鍵選單、Toast 通知"]
     UI -- 啟用開關、手動刷新 --> Config["ConfigStore<br/>config.json：各 Provider 是否啟用"]
     Config --> Scheduler
 ```
@@ -192,28 +192,32 @@ pub struct ProviderStatus {
 
 ## 7. UI 與互動
 
-UI 由托盤圖示、Tooltip、右鍵選單與一個點擊托盤時彈出的卡片面板組成，面板以 Slint 繪製。只顯示**啟用**的 Provider。
+UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Slint 繪製。只顯示**啟用**的 Provider。主視窗採一般視窗而非彈出面板，理由見 ADR-0002。
 
 **托盤圖示**
 
 - 顏色取所有啟用 Provider 的最高用量，舊快照也計入，但已重置的額度視窗以 0% 計：低於 70% 綠色、70% 至 90% 黃色、90% 以上紅色。
 - 任一啟用的 Provider 有失敗原因時，圖示疊加警示標記。
 - 所有啟用 Provider 的快照都是舊快照（或沒有快照）時，圖示改為灰色。
-- 圖示不顯示數字；共 8 個圖示（綠、黃、紅、灰 × 有無警示）。
+- 圖示不顯示數字；由程式繪製（綠、黃、紅、灰 × 有無警示），不需另備圖檔。主視窗的工作列圖示與托盤圖示同步。
 - Tooltip：每個啟用 Provider 一行，列出其用量最高的額度視窗，例如「Claude 61%（5 小時）」「Codex 75%（5 小時）」。
 
-**彈出面板**
+**主視窗**
 
-- 左鍵點擊托盤圖示開啟，點擊面板外或按 Esc 關閉；再次點擊托盤圖示則切換開關。
-- 打開時，若某 Provider 的快照超過 30 秒且不在退避期間，自動刷新該 Provider。
-- 無邊框、置頂，以托盤圖示的實際位置為錨點：放在圖示朝螢幕內側的一邊（工作列在下時即圖示上方），沿工作列方向對齊圖示並限制在工作區內；圖示在「^」隱藏區時面板會避開圖示。Slint 的 `clicked` 不帶座標，故以 `Shell_NotifyIconGetRect` 取得圖示矩形（需找出 Slint 內部的 `SlintSystemTrayWindow` 隱藏視窗，uID 為 1），取不到時退回以游標位置定位。
-- 面板顯示後延遲約 30ms 以 `SetForegroundWindow` 取得前景焦點，Esc 與失焦關閉才會生效；點托盤圖示時面板會先失焦關閉，故關閉後 300ms 內的托盤點擊不重新開啟。
-- 每個 Provider 一張卡片：名稱、方案標籤（例如「Claude · Max 5x」）、各額度視窗一列（名稱、進度條、百分比、重置倒數）。
-- 重置倒數：24 小時內顯示相對時間（「2 時 13 分後重置」），超過 24 小時顯示日期時間（「11/12（四）14:59 重置」）。
-- 進度條顏色沿用托盤圖示的門檻（綠、黃、紅）。
+- 一般視窗：有標題列，可拖動、可調整大小（最小 360×200）；程式啟動時不顯示，只有托盤。
+- 左鍵點擊托盤圖示：視窗不在最前面時顯示並移到最前面，已在最前面則隱藏。點托盤會讓視窗先失焦，故失焦 400ms 內仍視為在最前面。
+- 按 X 或 Esc 隱藏回托盤，不結束程式；結束只從右鍵選單。
+- 第一次開啟時出現在游標所在螢幕工作區的右下角；之後保留使用者拖到的位置與大小（目前僅限本次執行，之後存入 `config.json`）。
+- 顯示後約 30ms 以 `SetForegroundWindow` 取得前景（托盤點擊後 Shell 會授予前景權限）。
+- 視窗只建立一次，隱藏時保留；不在每次開啟時重建（重建會經過預設大小的過渡，造成位置跳動與畫面殘缺）。
+- 開啟時，若某 Provider 的快照超過 30 秒且不在退避期間，自動刷新該 Provider。
+- 頂部工具列有「↻ 立即刷新」按鈕；內容超出視窗高度時捲動。
+- 每個 Provider 一張精簡卡片：標題列為名稱、方案標籤（例如「Max 5x」），右側為「更新於 N 分鐘前」（刷新中改為轉圈圖示）；每個額度視窗一行：名稱｜進度條｜百分比｜重置時間。
+- 重置時間（每行最右欄，省略「重置」二字）：24 小時內顯示相對時間（「2 時 13 分後」），超過 24 小時顯示日期時間（「11/12（四）14:59」），重置時間已過顯示「已重置」。
+- 進度條與百分比顏色沿用托盤圖示的門檻（綠、黃、紅）。
 - 金額型 Provider（v2 Command Code）顯示「已用 / 額度」的美金數字與進度條。
-- 卡片顯示快照取得時間（「更新於 N 分鐘前」，面板開啟期間即時更新）。
-- 面板關閉時釋放視窗元件，只保留托盤與背景排程，以降低閒置記憶體（效果待實測）。
+- 「更新於 N 分鐘前」與重置倒數每 30 秒重新計算。
+- 配色跟隨 Windows 深色／淺色模式。
 
 **卡片顯示規則**
 
@@ -271,7 +275,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個點擊托盤時彈出的卡�
 ```
 
 - 首次啟動（`config.json` 不存在）：憑證檔存在的 Provider 預設啟用，其餘停用，結果寫入 `config.json`；之後只依 config。
-- 刷新間隔（5 分鐘）、面板自動刷新門檻（30 秒）、顏色門檻（70／90）、通知門檻（80／95）皆為程式常數，不可設定。
+- 刷新間隔（5 分鐘）、開啟視窗自動刷新門檻（30 秒）、顏色門檻（70／90）、通知門檻（80／95）皆為程式常數，不可設定。
 - 開機自啟以登錄檔為唯一來源：`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，選單勾選狀態直接讀寫登錄檔，不需系統管理員權限。
 
 **機密處理原則**
@@ -293,8 +297,8 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個點擊托盤時彈出的卡�
 | --- | --- | --- |
 | 啟動 | 先載入 `snapshots.json`，再立即刷新一次 | 是 |
 | 背景排程 | 每 5 分鐘 | 是 |
-| 打開面板 | 快照超過 30 秒時刷新該 Provider | 是 |
-| 手動（面板按鈕、右鍵「立即刷新」） | 立刻刷新全部啟用的 Provider | **否**，一定送出 |
+| 開啟視窗 | 快照超過 30 秒時刷新該 Provider | 是 |
+| 手動（視窗按鈕、右鍵「立即刷新」） | 立刻刷新全部啟用的 Provider | **否**，一定送出 |
 | 從睡眠恢復 | 立即刷新一次 | 是 |
 
 - 每個請求逾時 10 秒。
@@ -329,12 +333,16 @@ AIBar/
 │   ├── adr/                  // 架構決策
 │   └── agents/               // agent skill 設定
 ├── ui/
+│   ├── app.slint             // 匯出所有頂層元件
 │   ├── tray.slint            // SystemTrayIcon 與右鍵選單
-│   └── panel.slint           // 彈出面板：卡片、進度條
-├── assets/                   // 托盤圖示：綠、黃、紅、灰 × 有無警示
+│   ├── main_window.slint     // 主視窗：精簡卡片、進度條
+│   └── about.slint           // 關於（AboutSlint）
 └── src/
     ├── main.rs               // 進入點、單一執行個體、事件迴圈
     ├── model.rs              // Snapshot、UsageWindow、FetchFailure、ProviderStatus
+    ├── view.rs               // 模型轉畫面：卡片、托盤顏色與 Tooltip、時間文字
+    ├── main_window.rs        // 主視窗顯示／隱藏、初始位置、前景
+    ├── tray_icon.rs          // 繪製托盤圖示
     ├── scheduler.rs          // 刷新排程與退避（背景執行緒 + channel）
     ├── config.rs             // config.json 讀寫、首次啟動自動偵測
     ├── snapshot_store.rs     // snapshots.json 讀寫
@@ -351,7 +359,7 @@ AIBar/
 
 **專案重點**
 
-- 依賴：`slint`（關閉預設 feature，只啟用 `std`、`compat-1-2`、`accessibility`、`backend-winit`、`renderer-software`、`system-tray`、`unstable-winit-030`）、`slint-build`（build dependency）、`ureq`、`serde`、`serde_json`、`windows`。
+- 依賴：`slint`（關閉預設 feature，只啟用 `std`、`compat-1-2`、`accessibility`、`backend-winit`、`renderer-software`、`system-tray`、`unstable-winit-030`）、`slint-build`（build dependency）、`ureq`、`serde`、`serde_json`、`chrono`（本地時區格式化重置時間）、`windows`。
 - 隱藏主控台視窗：`main.rs` 開頭加 `#![windows_subsystem = "windows"]`。
 - 單一執行個體：以具名 Mutex 防止重複啟動。
 - 執行緒模型：Slint UI 跑在主執行緒；排程器跑在背景執行緒，各 Provider 的請求在其中執行，結果透過 `slint::invoke_from_event_loop` 送回 UI 更新。
@@ -378,7 +386,7 @@ cargo build --release
 ```mermaid
 flowchart LR
     M0["驗證端點 ✓<br/>Claude 與 Codex 用量端點<br/>與憑證檔位置已實測"]
-    M1["v0<br/>Claude 與 Codex<br/>托盤、面板、選單<br/>快照存檔、開機自啟"]
+    M1["v0<br/>Claude 與 Codex<br/>托盤、主視窗、選單<br/>快照存檔、開機自啟"]
     M2["v1<br/>Antigravity 探測"]
     M3["v2<br/>Command Code<br/>手動貼 cookie<br/>80% 與 95% 通知"]
 
@@ -400,8 +408,8 @@ flowchart LR
 v0 先交付 Claude 與 Codex，其餘依序加入；六角形為進到下一階段前的驗收標準。
 
 1. ~~用 curl 或 PowerShell 實測 Claude 與 Codex 端點~~（2026-11-09 完成）。
-2. 安裝 Rust 工具鏈與 C++ 建置工具（第 10 節），建立 Cargo 專案並跑通 Slint 的托盤與面板範例，驗證點擊座標與面板定位；接著完成資料模型、設定與快照存取。
-3. 實作 Claude 與 Codex Provider、排程與退避，接上托盤圖示、面板與右鍵選單（含開機自啟、關於）。
+2. 安裝 Rust 工具鏈與 C++ 建置工具（第 10 節），~~建立 Cargo 專案並跑通 Slint 的托盤與主視窗~~（2026-11-09 完成）；接著完成資料模型、設定與快照存取。
+3. 實作 Claude 與 Codex Provider、排程與退避，接上托盤圖示、主視窗與右鍵選單（含開機自啟、關於）。
 4. 加入 Antigravity 探測（v1）。
 5. 加入 Command Code 手動 cookie 與 Toast 通知（v2）。
 
@@ -419,7 +427,7 @@ v0 先交付 Claude 與 Codex，其餘依序加入；六角形為進到下一階
 | Antigravity 本機探測屬實驗性做法 | 版本更新後可能失效 | 放在 v1，失效時顯示「未執行」或錯誤，不影響其他 Provider |
 | 帳號層級的使用規範 | 使用非公開端點可能不被官方支援 | 僅供個人或少數同事使用，低頻率輪詢 |
 | 首次使用 Rust，編譯錯誤與所有權概念需適應 | 開發時程可能超出預期 | 由 AI 撰寫、開發者逐檔閱讀；採用背景執行緒加 channel 的簡單並行模型，不引入 async runtime |
-| Slint 的系統托盤是 1.17 才加入的新功能；面板定位依賴 Slint 未公開的內部視窗類別名稱 | Slint 改版後面板無法貼近托盤 | 已以原型驗證（2026-11-09）；類別名稱失效時自動退回以游標位置定位 |
+| Slint 的系統托盤是 1.17 才加入的新功能，仍有缺陷（1.18.1 若在圖示設定前建立任何視窗，托盤會建立失敗且不重試） | 托盤圖示不出現 | 已以原型驗證（2026-11-09）；`Tray::new()` 後立即設定圖示，再建立其他視窗 |
 
 **待驗證清單**
 
@@ -427,7 +435,7 @@ v0 先交付 Claude 與 Codex，其餘依序加入；六角形為進到下一階
 - [x] Claude 用量端點的路徑、必要 header 與回應欄位
 - [x] `%USERPROFILE%\.codex\auth.json` 的欄位名稱（token 與 account id）
 - [x] Codex 用量端點的路徑與回應欄位
-- [x] Slint 托盤的點擊事件能否取得位置，用於面板定位（`clicked` 不帶座標，改用 `Shell_NotifyIconGetRect`）
+- [x] Slint 托盤的點擊事件能否取得位置（`clicked` 不帶座標；改用一般視窗後不再需要，見 ADR-0002）
 - [x] Slint 托盤能否偵測左鍵點擊與右鍵選單、能否動態更換圖示與 Tooltip
 - [ ] Windows 睡眠恢復事件的取得方式
 - [ ] Antigravity 在 Windows 上 language server 的行程名稱與命令列參數（v1）
