@@ -71,6 +71,7 @@ impl UsageProvider for Codex {
             plan,
             account_hash: account_hash(account_id),
             windows,
+            credits: None,
             fetched_at: SystemTime::now(),
         })
     }

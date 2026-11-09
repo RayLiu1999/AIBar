@@ -1,8 +1,11 @@
 //! Provider：各 AI 服務的用量來源（規格書第 5 節）。
 //! 每個 Provider 的端點細節集中在自己的模組，端點改版時只需修改一個檔案。
 
+pub mod antigravity;
 pub mod claude;
 pub mod codex;
+pub mod command_code;
+pub mod openrouter;
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -29,9 +32,15 @@ pub trait UsageProvider: Send + Sync {
     fn fetch(&self) -> Result<Snapshot, FetchFailure>;
 }
 
-/// 所有支援的 Provider（依卡片顯示順序）
+/// 所有支援的 Provider（預設顯示順序；實際順序由 config.json 決定）
 pub fn all() -> Vec<std::sync::Arc<dyn UsageProvider>> {
-    vec![std::sync::Arc::new(claude::Claude), std::sync::Arc::new(codex::Codex)]
+    vec![
+        std::sync::Arc::new(claude::Claude),
+        std::sync::Arc::new(codex::Codex),
+        std::sync::Arc::new(antigravity::Antigravity),
+        std::sync::Arc::new(command_code::CommandCode),
+        std::sync::Arc::new(openrouter::OpenRouter),
+    ]
 }
 
 /// 每個請求的逾時
@@ -59,6 +68,26 @@ fn agent() -> &'static Agent {
     })
 }
 
+/// 只連本機（127.0.0.1）用的 agent：本機 language server 使用自簽憑證，因此不驗證憑證。
+/// 絕不可用於外部網址（`post_json_local` 會檢查）。
+fn local_agent() -> &'static Agent {
+    static AGENT: OnceLock<Agent> = OnceLock::new();
+    AGENT.get_or_init(|| {
+        Agent::config_builder()
+            .timeout_global(Some(Duration::from_secs(5)))
+            .http_status_as_error(false)
+            .tls_config(
+                TlsConfig::builder()
+                    .provider(TlsProvider::NativeTls)
+                    .root_certs(RootCerts::PlatformVerifier)
+                    .disable_verification(true)
+                    .build(),
+            )
+            .build()
+            .into()
+    })
+}
+
 /// 送出 GET 並解析 JSON，依狀態碼轉成失敗原因。
 /// 日誌只記錄 Provider、狀態碼與耗時，不記錄 header（含 token）與回應內容。
 pub fn get_json(provider: &str, url: &str, headers: &[(&str, &str)]) -> Result<Value, FetchFailure> {
@@ -67,10 +96,38 @@ pub fn get_json(provider: &str, url: &str, headers: &[(&str, &str)]) -> Result<V
         req = req.header(*k, *v);
     }
     let started = Instant::now();
-    let mut resp = req.call().map_err(|e| {
+    let resp = req.call().map_err(|e| {
         log!("[{provider}] 連線失敗：{e}");
         FetchFailure::Network
     })?;
+    handle_response(provider, started, resp)
+}
+
+/// 對本機服務送出 JSON POST（只接受 127.0.0.1）
+pub fn post_json_local(
+    provider: &str,
+    url: &str,
+    headers: &[(&str, &str)],
+    body: &Value,
+) -> Result<Value, FetchFailure> {
+    let local = url.starts_with("https://127.0.0.1:") || url.starts_with("http://127.0.0.1:");
+    if !local {
+        return Err(FetchFailure::Network);
+    }
+    let mut req = local_agent().post(url).header("Content-Type", "application/json");
+    for (k, v) in headers {
+        req = req.header(*k, *v);
+    }
+    let started = Instant::now();
+    let resp = req.send(body.to_string()).map_err(|_| FetchFailure::Network)?;
+    handle_response(provider, started, resp)
+}
+
+fn handle_response(
+    provider: &str,
+    started: Instant,
+    mut resp: ureq::http::Response<ureq::Body>,
+) -> Result<Value, FetchFailure> {
     let status = resp.status().as_u16();
     log!("[{provider}] HTTP {status}，{} ms", started.elapsed().as_millis());
 

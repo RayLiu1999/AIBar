@@ -87,6 +87,7 @@ impl UsageProvider for Claude {
             plan,
             account_hash: account_hash(&org),
             windows,
+            credits: None,
             fetched_at: SystemTime::now(),
         })
     }

@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{app_dir, write_atomic};
-use crate::model::{Snapshot, UsageWindow};
+use crate::model::{Credits, Snapshot, UsageWindow};
 
 const FILE_NAME: &str = "snapshots.json";
 const VERSION: u32 = 1;
@@ -30,6 +30,9 @@ struct StoredSnapshot {
     /// Unix 秒
     fetched_at: u64,
     windows: Vec<StoredWindow>,
+    /// 金額型額度（美元）；舊版檔案沒有此欄位
+    #[serde(default)]
+    credits: Option<(f64, f64)>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -62,6 +65,7 @@ impl From<&Snapshot> for StoredSnapshot {
                     window_secs: w.window_secs,
                 })
                 .collect(),
+            credits: s.credits.as_ref().map(|c| (c.used, c.limit)),
         }
     }
 }
@@ -82,6 +86,7 @@ impl From<StoredSnapshot> for Snapshot {
                     window_secs: w.window_secs,
                 })
                 .collect(),
+            credits: s.credits.map(|(used, limit)| Credits { used, limit }),
         }
     }
 }
@@ -148,6 +153,7 @@ mod tests {
                 resets_at: Some(from_secs(1_794_010_000)),
                 window_secs: Some(18000),
             }],
+            credits: Some(Credits { used: 4.33, limit: 10.0 }),
         }
     }
 
@@ -162,6 +168,7 @@ mod tests {
         assert_eq!(b.windows[0].name, "5 小時");
         assert_eq!(b.windows[0].resets_at, s.windows[0].resets_at);
         assert_eq!(b.windows[0].window_secs, Some(18000));
+        assert_eq!(b.credits, s.credits);
     }
 
     #[test]

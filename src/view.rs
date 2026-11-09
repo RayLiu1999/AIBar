@@ -6,7 +6,7 @@ use std::time::{Duration, SystemTime};
 use chrono::{DateTime, Datelike, Local, Timelike, Weekday};
 use slint::{Color, ModelRc, VecModel};
 
-use crate::model::{FetchFailure, ProviderStatus, Snapshot, UsageWindow};
+use crate::model::{Credits, FetchFailure, ProviderStatus, Snapshot, UsageWindow};
 use crate::{CardData, UsageLevel, WindowRow};
 
 /// 快照年齡超過此數個背景刷新間隔即為舊快照
@@ -52,10 +52,10 @@ pub fn provider_meta(id: &str) -> ProviderMeta {
         },
         "antigravity" => ProviderMeta {
             name: "Antigravity",
-            cli: "antigravity",
+            cli: "",
             mono: "A",
             accent: [0x7B, 0xC8, 0x8A],
-            source: "本機 language server",
+            source: "本機 Antigravity App 的 language server",
             usage_url: "",
         },
         "commandcode" => ProviderMeta {
@@ -63,8 +63,16 @@ pub fn provider_meta(id: &str) -> ProviderMeta {
             cli: "commandcode",
             mono: "K",
             accent: [0xA9, 0x8B, 0xE6],
-            source: "瀏覽器 cookie",
-            usage_url: "",
+            source: "Command Code CLI 登入憑證（API key）",
+            usage_url: "https://commandcode.ai/billing",
+        },
+        "openrouter" => ProviderMeta {
+            name: "OpenRouter",
+            cli: "",
+            mono: "O",
+            accent: [0x8C, 0x9E, 0xF5],
+            source: "設定中輸入的 API key（DPAPI 加密）",
+            usage_url: "https://openrouter.ai/settings/credits",
         },
         _ => ProviderMeta {
             name: "未知",
@@ -235,7 +243,19 @@ pub fn updated_text(fetched_at: SystemTime, now: SystemTime) -> String {
 }
 
 /// 失敗原因文字（規格書第 7 節）
-pub fn failure_text(f: &FetchFailure, cli: &str) -> String {
+pub fn failure_text(f: &FetchFailure, provider_id: &str) -> String {
+    let cli = provider_meta(provider_id).cli;
+    match (f, provider_id) {
+        (FetchFailure::NotLoggedIn, "openrouter") => "尚未設定 API key，請到設定 → Provider 輸入".into(),
+        (FetchFailure::TokenExpired, "openrouter") => {
+            "API key 無效或已撤銷，請到設定 → Provider 重新輸入".into()
+        }
+        (FetchFailure::NotLoggedIn, "antigravity") => "找不到 Antigravity，請先安裝並登入".into(),
+        _ => failure_text_generic(f, cli),
+    }
+}
+
+fn failure_text_generic(f: &FetchFailure, cli: &str) -> String {
     match f {
         FetchFailure::NotLoggedIn => format!("找不到登入資訊，請先在終端機執行 {cli}"),
         FetchFailure::TokenExpired => format!("Token 已過期，請在終端機執行一次 {cli}"),
@@ -244,7 +264,16 @@ pub fn failure_text(f: &FetchFailure, cli: &str) -> String {
         }
         FetchFailure::Network => "無法連線，下次排程將重試".into(),
         FetchFailure::BadResponse => "回應格式改變".into(),
-        FetchFailure::NotRunning => "未執行".into(),
+        FetchFailure::NotRunning => "Antigravity 未執行，開啟 App 後會自動更新".into(),
+    }
+}
+
+/// 金額型額度文字：「本期已用 $4.33 / $10.00」；上限 0 表示無上限
+pub fn credits_text(c: &Credits) -> String {
+    if c.limit > 0.0 {
+        format!("本期已用 ${:.2} / ${:.2}", c.used, c.limit)
+    } else {
+        format!("本月已用 ${:.2}（無上限）", c.used)
     }
 }
 
@@ -293,6 +322,8 @@ pub fn card(s: &ProviderStatus, mode: DisplayMode, now: SystemTime) -> CardData 
         Some(FetchFailure::NotLoggedIn | FetchFailure::TokenExpired) => meta.cli,
         _ => "",
     };
+    // Antigravity 未執行時不算失敗：只顯示提示，不顯示警示色
+    let not_running = matches!(s.last_failure, Some(FetchFailure::NotRunning));
     let next_refresh = snap
         .and_then(|sn| (sn.fetched_at + s.refresh_interval).duration_since(now).ok())
         .map(|d| format!("約 {}後（{}）", duration_text(d), interval_text(s.refresh_interval)))
@@ -310,10 +341,21 @@ pub fn card(s: &ProviderStatus, mode: DisplayMode, now: SystemTime) -> CardData 
         failure: s
             .last_failure
             .as_ref()
-            .map(|f| failure_text(f, meta.cli))
+            .filter(|_| !not_running)
+            .map(|f| failure_text(f, s.provider_id))
             .unwrap_or_default()
             .into(),
+        notice: if not_running {
+            failure_text(&FetchFailure::NotRunning, s.provider_id).into()
+        } else {
+            Default::default()
+        },
         failure_cmd: failure_cmd.into(),
+        credits_text: snap
+            .and_then(|sn| sn.credits.as_ref())
+            .map(credits_text)
+            .unwrap_or_default()
+            .into(),
         refreshing: s.refreshing,
         source: meta.source.into(),
         usage_url: meta.usage_url.into(),
@@ -401,7 +443,7 @@ pub fn tray_view(
                 format!("{}・{} 剩 {r:.0}%・{reset}", meta.name, w.name)
             }
         }
-        (None, Some(f)) => format!("{}・{}", meta.name, failure_text(f, meta.cli)),
+        (None, Some(f)) => format!("{}・{}", meta.name, failure_text(f, focus.provider_id)),
         (None, None) => format!("{}・讀取中", meta.name),
     }];
     // 其後每個啟用 Provider 一行
@@ -462,6 +504,7 @@ mod tests {
             plan: None,
             account_hash: String::new(),
             windows,
+            credits: None,
             fetched_at: now - Duration::from_secs(age_secs),
         }
     }
@@ -474,6 +517,15 @@ mod tests {
             refreshing: false,
             refresh_interval: Duration::from_secs(5 * 60),
         }
+    }
+
+    #[test]
+    fn 各_provider_的失敗文字() {
+        assert!(failure_text(&FetchFailure::NotLoggedIn, "openrouter").contains("API key"));
+        assert!(failure_text(&FetchFailure::TokenExpired, "codex").contains("codex"));
+        assert!(failure_text(&FetchFailure::NotRunning, "antigravity").contains("未執行"));
+        assert_eq!(credits_text(&Credits { used: 4.333, limit: 10.0 }), "本期已用 $4.33 / $10.00");
+        assert_eq!(credits_text(&Credits { used: 3.2, limit: 0.0 }), "本月已用 $3.20（無上限）");
     }
 
     #[test]

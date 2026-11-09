@@ -13,9 +13,11 @@ mod config;
 mod icon_art;
 mod main_window;
 mod model;
+mod notify;
 mod platform;
 mod providers;
 mod scheduler;
+mod secret;
 mod snapshot_store;
 mod tray_icon;
 mod view;
@@ -38,7 +40,7 @@ slint::include_modules!();
 /// 「更新於 N 分鐘前」與重置倒數的重新計算間隔
 const UI_TICK: Duration = Duration::from_secs(30);
 /// 設定視窗的分頁
-const SETTINGS_PAGE_ABOUT: i32 = 2;
+const SETTINGS_PAGE_ABOUT: i32 = 3;
 
 struct App {
     tray: Tray,
@@ -50,6 +52,7 @@ struct App {
     available: Vec<&'static str>,
     /// 排程器送來的最新狀態（含停用的 Provider）
     statuses: RefCell<Vec<ProviderStatus>>,
+    notifier: RefCell<notify::Notifier>,
 }
 
 thread_local! {
@@ -75,6 +78,22 @@ impl App {
         *self.statuses.borrow_mut() = statuses;
         self.render();
         self.render_settings();
+        self.check_notifications();
+    }
+
+    /// 額度跨過 80%／95% 時發 Toast（設定中可關閉）
+    fn check_notifications(&self) {
+        if !self.config.borrow().notifications {
+            return;
+        }
+        let ids = self.enabled_ids();
+        let statuses = self.statuses.borrow();
+        let enabled: Vec<&ProviderStatus> =
+            statuses.iter().filter(|s| ids.contains(&s.provider_id)).collect();
+        for alert in self.notifier.borrow_mut().check(&enabled, SystemTime::now()) {
+            log!("[通知] {}", alert.title);
+            notify::show(&alert.title, &alert.body);
+        }
     }
 
     /// 依目前狀態更新托盤圖示、Tooltip、頁籤與卡片
@@ -130,25 +149,22 @@ impl App {
     /// 設定視窗中每個 Provider 的偵測狀態文字
     fn provider_status_text(&self, id: &str) -> String {
         let meta = view::provider_meta(id);
-        match id {
-            "antigravity" => return "v1 推出".into(),
-            "commandcode" => return "v2 推出（需貼上 cookie）".into(),
-            _ => {}
-        }
-        let tool = if id == "claude" { "Claude Code" } else { "Codex CLI" };
         let present = providers::all().iter().any(|p| p.id() == id && p.credentials_present());
-        if !present {
-            return format!("找不到 {tool} 登入，請先在終端機執行 {}", meta.cli);
-        }
         let plan = self
             .statuses
             .borrow()
             .iter()
             .find(|s| s.provider_id == id)
-            .and_then(|s| s.snapshot.as_ref()?.plan.clone());
-        match plan {
-            Some(plan) => format!("已偵測到 {tool} 登入 · {plan}"),
-            None => format!("已偵測到 {tool} 登入"),
+            .and_then(|s| s.snapshot.as_ref()?.plan.clone())
+            .map(|p| format!(" · {p}"))
+            .unwrap_or_default();
+        match (id, present) {
+            ("openrouter", true) => format!("已設定 API key{plan}"),
+            ("openrouter", false) => "尚未設定 API key：在下方貼上後按儲存".into(),
+            ("antigravity", true) => format!("已安裝 Antigravity，App 開啟時讀取{plan}"),
+            ("antigravity", false) => "找不到 Antigravity".into(),
+            (_, true) => format!("已偵測到 {} 登入{plan}", tool_name(id)),
+            (_, false) => format!("找不到 {} 登入，請先在終端機執行 {}", tool_name(id), meta.cli),
         }
     }
 
@@ -171,6 +187,8 @@ impl App {
                     status: self.provider_status_text(&p.id).into(),
                     enabled: p.enabled && available,
                     available,
+                    needs_key: p.id == providers::openrouter::ID,
+                    has_key: p.id == providers::openrouter::ID && secret::has(&p.id),
                 }
             })
             .collect();
@@ -180,6 +198,7 @@ impl App {
             DisplayMode::Used => 1,
         });
         w.set_autostart(autostart::is_enabled());
+        w.set_notifications(cfg.notifications);
     }
 
     fn open_settings(&self, page: Option<i32>) {
@@ -211,6 +230,31 @@ impl App {
                             app.apply_enabled();
                         })();
                     });
+                    // 儲存 API key 後自動啟用並立即刷新
+                    w.on_key_saved(|id, key| {
+                        let (id, key) = (id.to_string(), key.to_string());
+                        with_app(move |app| {
+                            if secret::set(&id, Some(&key)) {
+                                app.config.borrow_mut().set_enabled(&id, true);
+                                app.apply_enabled();
+                                app.scheduler.refresh_now();
+                            }
+                        })();
+                    });
+                    w.on_key_cleared(|id| {
+                        let id = id.to_string();
+                        with_app(move |app| {
+                            secret::set(&id, None);
+                            app.config.borrow_mut().set_enabled(&id, false);
+                            app.apply_enabled();
+                        })();
+                    });
+                    w.on_notifications_toggled(|on| {
+                        with_app(move |app| {
+                            app.config.borrow_mut().notifications = on;
+                            app.save_config();
+                        })();
+                    });
                     *self.settings.borrow_mut() = Some(w);
                 }
                 Err(e) => {
@@ -230,6 +274,16 @@ impl App {
     }
 }
 
+/// 設定視窗中用來描述登入來源的工具名稱
+fn tool_name(id: &str) -> &'static str {
+    match id {
+        "claude" => "Claude Code",
+        "codex" => "Codex CLI",
+        "commandcode" => "Command Code CLI",
+        _ => "CLI",
+    }
+}
+
 /// 產生只在 App 還存在時才執行的回呼，避免回呼與 App 互相持有造成循環參照
 fn with_app(f: impl Fn(Rc<App>) + 'static) -> impl Fn() + 'static {
     move || {
@@ -239,10 +293,10 @@ fn with_app(f: impl Fn(Rc<App>) + 'static) -> impl Fn() + 'static {
     }
 }
 
-/// `--probe`：對每個 Provider 抓取一次並印出結果
-fn probe() {
+/// `--probe [id]`：對每個（或指定的）Provider 抓取一次並印出結果
+fn probe(only: Option<&str>) {
     providers::PROBE.store(true, Ordering::Relaxed);
-    for p in providers::all() {
+    for p in providers::all().into_iter().filter(|p| only.is_none_or(|id| p.id() == id)) {
         eprintln!("== {}（憑證檔{}）", p.id(), if p.credentials_present() { "存在" } else { "不存在" });
         match p.fetch() {
             Ok(s) => {
@@ -262,8 +316,16 @@ fn probe() {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    if std::env::args().any(|a| a == "--probe") {
-        probe();
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|a| a == "--probe") {
+        probe(args.get(i + 1).map(String::as_str));
+        return Ok(());
+    }
+    // `--notify-test`：發一則測試通知，確認 Windows 通知設定沒有擋住 AIBar
+    if args.iter().any(|a| a == "--notify-test") {
+        notify::init();
+        notify::show("AIBar 測試通知", "看到這則通知表示額度提醒可以正常運作");
+        std::thread::sleep(Duration::from_secs(1));
         return Ok(());
     }
 
@@ -272,6 +334,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     log!("AIBar {} 啟動", env!("CARGO_PKG_VERSION"));
+    notify::init();
     // 正式版：開機自啟已開啟時，把登錄的路徑更新為目前的執行檔（exe 搬過位置也能正確自啟）。
     // 開發版不做，以免把 target\debug 的路徑寫進去。
     #[cfg(not(debug_assertions))]
@@ -331,6 +394,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config: RefCell::new(cfg),
         available,
         statuses: RefCell::default(),
+        notifier: RefCell::new(notify::Notifier::load()),
     });
     APP.with(|a| *a.borrow_mut() = Rc::downgrade(&app));
 

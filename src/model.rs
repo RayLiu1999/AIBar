@@ -1,6 +1,4 @@
 //! 資料模型（規格書第 6 節）。名詞定義見 CONTEXT.md。
-//!
-//! 之後實作 snapshot_store 時會再為 Snapshot、UsageWindow 加上 serde 序列化。
 
 use std::time::SystemTime;
 
@@ -10,10 +8,18 @@ pub struct Snapshot {
     /// 方案名稱，例如「Max 5x」「Plus」
     pub plan: Option<String>,
     /// 帳號識別的雜湊，不存原始 id；用於啟動時判斷帳號是否已更換
-    #[allow(dead_code)] // 帳號不符的判斷在 snapshot_store 實作時才會用到
     pub account_hash: String,
     pub windows: Vec<UsageWindow>,
+    /// 以金額計的額度（Command Code、OpenRouter）；沒有時為 None
+    pub credits: Option<Credits>,
     pub fetched_at: SystemTime,
+}
+
+/// 以美元計的額度：本期已用與上限
+#[derive(Clone, Debug, PartialEq)]
+pub struct Credits {
+    pub used: f64,
+    pub limit: f64,
 }
 
 /// 額度視窗：一段計量期間與其用量百分比
@@ -30,9 +36,8 @@ pub struct UsageWindow {
 
 /// 最近一次刷新沒有成功的理由
 #[derive(Clone, Debug)]
-#[allow(dead_code)] // 部分種類要等 Provider 實作後才會產生
 pub enum FetchFailure {
-    /// 找不到憑證檔
+    /// 找不到憑證（未登入 CLI，或未在設定輸入 API key）
     NotLoggedIn,
     /// 憑證到期時間已過，或回應 401／403
     TokenExpired,
@@ -42,7 +47,7 @@ pub enum FetchFailure {
     Network,
     /// 回應格式無法解析
     BadResponse,
-    /// v1：Antigravity 未執行
+    /// Antigravity 未執行
     NotRunning,
 }
 

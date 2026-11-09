@@ -1,5 +1,5 @@
 // 設定視窗（規格書第 7 節）：左側分類，右側內容；變更立即生效
-import { Palette, Switch, ComboBox, ScrollView, AboutSlint } from "std-widgets.slint";
+import { Palette, Switch, ComboBox, ScrollView, AboutSlint, LineEdit, Button } from "std-widgets.slint";
 
 // 設定視窗中的一個 Provider
 export struct ProviderSetting {
@@ -7,9 +7,11 @@ export struct ProviderSetting {
     name: string,
     mono: string,
     accent: color,
-    status: string,      // 「已偵測到 Claude Code 登入 · Pro」「v1 推出」
+    status: string,      // 「已偵測到 Claude Code 登入 · Pro」
     enabled: bool,
     available: bool,     // 尚未推出的 Provider 不能啟用
+    needs-key: bool,     // 需要在此輸入 API key（OpenRouter）
+    has-key: bool,       // 已存有 API key
 }
 
 global SettingsTheme {
@@ -156,9 +158,10 @@ component SmallButton inherits Rectangle {
 }
 
 export component SettingsWindow inherits Window {
-    // 0 一般、1 Provider、2 關於
+    // 0 一般、1 Provider、2 通知、3 關於
     in-out property <int> page;
     in property <bool> autostart;
+    in property <bool> notifications;
     // 0 剩餘、1 已使用
     in property <int> display-index;
     in property <[ProviderSetting]> providers;
@@ -168,6 +171,9 @@ export component SettingsWindow inherits Window {
     callback display-changed(int);
     callback provider-toggled(string, bool);
     callback provider-moved(string, int);
+    callback key-saved(string, string);
+    callback key-cleared(string);
+    callback notifications-toggled(bool);
 
     title: "AIBar 設定";
     preferred-width: 760px;
@@ -198,14 +204,16 @@ export component SettingsWindow inherits Window {
             }
             NavItem {
                 text: "通知";
-                badge: "v2";
-                selected: false;
-            }
-            NavItem {
-                text: "關於";
                 selected: root.page == 2;
                 clicked => {
                     root.page = 2;
+                }
+            }
+            NavItem {
+                text: "關於";
+                selected: root.page == 3;
+                clicked => {
+                    root.page = 3;
                 }
             }
             Rectangle {
@@ -283,6 +291,7 @@ export component SettingsWindow inherits Window {
                     for p[i] in root.providers: Rectangle {
                         background: SettingsTheme.row-bg;
                         border-radius: 6px;
+                        VerticalLayout {
                         HorizontalLayout {
                             padding-left: 8px;
                             padding-right: 16px;
@@ -345,7 +354,7 @@ export component SettingsWindow inherits Window {
                                 alignment: center;
                                 Switch {
                                     checked: p.enabled;
-                                    enabled: p.available;
+                                    enabled: p.available && (!p.needs-key || p.has-key);
                                     accessible-label: "啟用 " + p.name;
                                     toggled => {
                                         root.provider-toggled(p.id, self.checked);
@@ -353,10 +362,62 @@ export component SettingsWindow inherits Window {
                                 }
                             }
                         }
+                        // API key 輸入列：只存在本機，以 DPAPI 加密
+                        if p.needs-key: HorizontalLayout {
+                            padding-left: 82px;
+                            padding-right: 16px;
+                            padding-bottom: 10px;
+                            spacing: 8px;
+                            key-input := LineEdit {
+                                horizontal-stretch: 1;
+                                input-type: password;
+                                placeholder-text: p.has-key ? "已儲存（輸入新的 key 可取代）" : "貼上 API key（sk-or-…）";
+                                accessible-label: p.name + " API key";
+                            }
+                            Button {
+                                text: "儲存";
+                                enabled: key-input.text != "";
+                                clicked => {
+                                    root.key-saved(p.id, key-input.text);
+                                    key-input.text = "";
+                                }
+                            }
+                            if p.has-key: Button {
+                                text: "清除";
+                                clicked => {
+                                    root.key-cleared(p.id);
+                                }
+                            }
+                        }
+                        }
                     }
                 }
 
                 if root.page == 2: VerticalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: "通知";
+                        font-size: 20px;
+                        font-weight: 700;
+                        color: SettingsTheme.text;
+                    }
+                    Rectangle {
+                        height: 12px;
+                    }
+                    SettingRow {
+                        title: "額度快用完時通知";
+                        description: "任一額度視窗已用超過 80% 與 95% 時各發一則 Windows 通知；該視窗重置後才會再次通知";
+                        Switch {
+                            checked: root.notifications;
+                            accessible-label: "額度快用完時通知";
+                            toggled => {
+                                root.notifications-toggled(self.checked);
+                            }
+                        }
+                    }
+                }
+
+                if root.page == 3: VerticalLayout {
                     spacing: 8px;
                     Text {
                         text: "關於";
@@ -370,7 +431,7 @@ export component SettingsWindow inherits Window {
                         color: SettingsTheme.text;
                     }
                     Text {
-                        text: "借用 Claude Code 與 Codex CLI 已登入的憑證讀取用量，只讀不寫；不收集或回傳任何資料。";
+                        text: "借用各 CLI 已登入的憑證讀取用量，只讀不寫；OpenRouter 的 API key 以 Windows DPAPI 加密存在本機。不收集或回傳任何資料。";
                         font-size: 12px;
                         color: SettingsTheme.subtext;
                         wrap: word-wrap;
