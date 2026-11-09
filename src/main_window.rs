@@ -9,7 +9,7 @@ use slint::winit_030::winit::event::WindowEvent;
 use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::winit_030::{EventResult, WinitWindowAccessor};
 use slint::{
-    CloseRequestResponse, ComponentHandle, Image, ModelRc, PhysicalPosition, PhysicalSize, VecModel,
+    CloseRequestResponse, ComponentHandle, ModelRc, PhysicalPosition, PhysicalSize, VecModel,
 };
 use windows::Win32::Foundation::{HWND, POINT};
 use windows::Win32::Graphics::Gdi::{
@@ -20,6 +20,7 @@ use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, SetForegroundWindow};
 
 use crate::config::WindowGeometry;
+use crate::tray_icon;
 use crate::{CardData, MainWindow};
 
 /// 第一次開啟時的視窗大小（邏輯像素，需與 main_window.slint 的 preferred 尺寸一致）
@@ -143,10 +144,6 @@ impl MainWindowHost {
         self.cards.set_vec(cards);
     }
 
-    pub fn set_icon(&self, icon: Image) {
-        self.window.set_window_icon(icon);
-    }
-
     /// Slint 視窗本身，用於設定其他屬性與回呼
     pub fn ui(&self) -> &MainWindow {
         &self.window
@@ -200,6 +197,7 @@ impl MainWindowHost {
         let weak = Rc::downgrade(self);
         slint::Timer::single_shot(FOCUS_DELAY, move || {
             if let Some(host) = weak.upgrade() {
+                tray_icon::apply_app_icon(host.window.window());
                 bring_to_front(host.window.window());
             }
         });

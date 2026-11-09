@@ -186,7 +186,6 @@ impl App {
         if self.settings.borrow().is_none() {
             match SettingsWindow::new() {
                 Ok(w) => {
-                    w.set_window_icon(tray_icon::make_app_icon(64));
                     w.set_version(env!("CARGO_PKG_VERSION").into());
                     w.on_autostart_toggled(|on| {
                         autostart::set_enabled(on);
@@ -226,6 +225,7 @@ impl App {
                 w.set_page(page);
             }
             let _ = w.show();
+            tray_icon::apply_app_icon(w.window());
         }
     }
 }
@@ -320,7 +320,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         available,
         statuses: RefCell::default(),
     });
-    app.window.set_icon(tray_icon::make_app_icon(64));
     APP.with(|a| *a.borrow_mut() = Rc::downgrade(&app));
 
     let ui = app.window.ui();

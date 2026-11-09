@@ -163,7 +163,6 @@ export component SettingsWindow inherits Window {
     in property <int> display-index;
     in property <[ProviderSetting]> providers;
     in property <string> version;
-    in property <image> window-icon;
 
     callback autostart-toggled(bool);
     callback display-changed(int);
@@ -171,7 +170,6 @@ export component SettingsWindow inherits Window {
     callback provider-moved(string, int);
 
     title: "AIBar 設定";
-    icon: root.window-icon;
     preferred-width: 760px;
     preferred-height: 560px;
     min-width: 600px;

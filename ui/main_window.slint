@@ -524,7 +524,6 @@ export component MainWindow inherits Window {
     in property <string> headline;
     // 0 為總覽，n 為 cards[n - 1]
     in property <int> selected-tab;
-    in property <image> window-icon;
 
     callback refresh-all();
     callback hide-requested();
@@ -534,7 +533,6 @@ export component MainWindow inherits Window {
     callback open-settings();
 
     title: "AIBar";
-    icon: root.window-icon;
     preferred-width: 460px;
     preferred-height: 640px;
     min-width: 380px;

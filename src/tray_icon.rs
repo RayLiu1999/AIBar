@@ -156,9 +156,27 @@ pub fn make_tray_sized(view: &TrayView, size: u32) -> Image {
     into_image(canvas)
 }
 
-/// App 圖示（視窗與工作列）；畫法與 exe 圖示共用 icon_art
+/// App 圖示（測試與手動檢查用）；畫法與 exe 圖示共用 icon_art
+#[cfg(test)]
 pub fn make_app_icon(size: u32) -> Image {
     into_image(icon_art::app_icon(size))
+}
+
+/// 把 App 圖示設到視窗的標題列與工作列按鈕。視窗要已顯示（底層視窗已建立）才有效。
+///
+/// 不用 Slint 的 `icon` 屬性：Slint 1.18.1 只在圖片的快取鍵改變時才套用視窗圖示，
+/// 而程式產生的圖片沒有快取鍵，因此永遠不會被套用。
+pub fn apply_app_icon(window: &slint::Window) {
+    use slint::winit_030::WinitWindowAccessor;
+    use slint::winit_030::winit::platform::windows::WindowExtWindows;
+    use slint::winit_030::winit::window::Icon;
+
+    const SIZE: u32 = 64;
+    let Ok(icon) = Icon::from_rgba(icon_art::app_icon(SIZE).to_rgba(), SIZE, SIZE) else { return };
+    window.with_winit_window(|w| {
+        w.set_window_icon(Some(icon.clone()));
+        w.set_taskbar_icon(Some(icon));
+    });
 }
 
 #[cfg(test)]
