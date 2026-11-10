@@ -1,0 +1,75 @@
+# 推送 v* 標籤（例如 v0.1.0）時：建置正式版並發布 GitHub Release
+# 附件：單一 exe、含 README／LICENSE 的 zip、SHA256 檢查碼
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: 建置並發布
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: 確認標籤與 Cargo.toml 版本一致
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+          if ("v$version" -ne $env:TAG) {
+            throw "標籤 $env:TAG 與 Cargo.toml 的版本 $version 不一致"
+          }
+
+      - name: 測試
+        run: cargo test --locked
+
+      - name: 建置正式版
+        run: cargo build --release --locked
+
+      - name: 打包
+        shell: pwsh
+        run: |
+          $base = "AIBar-$env:TAG-windows-x64"
+          New-Item -ItemType Directory -Force dist, "staging/$base" | Out-Null
+          Copy-Item target/release/aibar.exe "dist/$base.exe"
+          Copy-Item target/release/aibar.exe, README.md, README.en.md, LICENSE "staging/$base/"
+          Compress-Archive -Path "staging/$base" -DestinationPath "dist/$base.zip"
+          Get-ChildItem dist -File | ForEach-Object {
+            "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
+          } | Set-Content -Encoding ascii dist/SHA256SUMS.txt
+          Get-Content dist/SHA256SUMS.txt
+
+      - name: 發布說明
+        shell: pwsh
+        run: |
+          @"
+          ## 下載
+
+          - **AIBar-$env:TAG-windows-x64.exe**：單一執行檔，下載後即可執行（Windows 10／11 x64）
+          - **AIBar-$env:TAG-windows-x64.zip**：同一個 exe，附 README 與 LICENSE
+          - **SHA256SUMS.txt**：檢查碼
+
+          第一次執行時 Windows SmartScreen 可能顯示「Windows 已保護您的電腦」（exe 沒有程式碼簽章），
+          按「其他資訊」→「仍要執行」即可。建議放在固定位置（例如 ``%LOCALAPPDATA%\Programs\AIBar\``）再執行，
+          開機自啟會記住 exe 的路徑。
+          "@ | Set-Content -Encoding utf8 dist/notes.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: AIBar ${{ github.ref_name }}
+          body_path: dist/notes.md
+          generate_release_notes: true
+          files: |
+            dist/*.exe
+            dist/*.zip
+            dist/SHA256SUMS.txt

@@ -2,6 +2,9 @@
 
 [繁體中文](README.md) | **English**
 
+[![CI](https://github.com/RayLiu1999/AIBar/actions/workflows/ci.yml/badge.svg)](https://github.com/RayLiu1999/AIBar/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/RayLiu1999/AIBar)](https://github.com/RayLiu1999/AIBar/releases/latest)
+
 A Windows system-tray widget for AI subscription usage. See how much of your Claude, Codex and other quotas is left, and when they reset, without opening a website or a CLI.
 
 - The tray icon shows the remaining percentage; its border color tells you which service it is
@@ -38,19 +41,28 @@ Refresh rate: every 10 minutes in the background; opening the window refreshes d
 
 ## Installation
 
-You currently need to build it yourself.
+### Download (recommended)
+
+1. Download `AIBar-<version>-windows-x64.exe` (or the zip with README and LICENSE) from [Releases](https://github.com/RayLiu1999/AIBar/releases/latest).
+2. Put it somewhere permanent, for example `%LOCALAPPDATA%\Programs\AIBar\`, and run it. No runtime to install (Windows 10/11 x64).
+3. On first launch Windows SmartScreen may say "Windows protected your PC" because the exe is not code-signed; click "More info" → "Run anyway".
+4. Turn on "Start with Windows" in Settings to keep it running. Autostart remembers the exe path, so don't move it afterwards; to update, quit from the tray menu and overwrite the same file with the new version.
+
+You can verify downloads with the `SHA256SUMS.txt` attached to each release.
+
+### Build from source
 
 1. Install [Rust](https://rustup.rs/) (stable, target `x86_64-pc-windows-msvc`).
 2. Install Visual Studio Build Tools (or Visual Studio) with "Desktop development with C++", which includes the Windows SDK.
 3. Build:
 
    ```powershell
-   git clone <repo-url> AIBar
+   git clone https://github.com/RayLiu1999/AIBar.git
    cd AIBar
    cargo build --release
    ```
 
-4. Copy `target\release\aibar.exe` somewhere permanent (for example `%LOCALAPPDATA%\Programs\AIBar\`) and run it. Turn on "Start with Windows" in Settings to keep it running.
+4. `target\release\aibar.exe` is the result; continue with steps 2–4 of "Download" above.
 
 > The tray icon may start hidden under the "^" overflow; drag it onto the taskbar to keep it visible.
 
@@ -83,7 +95,8 @@ You currently need to build it yourself.
 
 - Stack: Rust + [Slint](https://slint.dev/) (UI and system tray), `ureq` (HTTP), the `windows` crate (Win32 and WinRT).
 - Spec: [`docs/spec.md`](docs/spec.md); glossary: [`CONTEXT.md`](CONTEXT.md); architecture decisions: [`docs/adr/`](docs/adr/) (all in Traditional Chinese).
-- Tests: `cargo test`.
+- Tests: `cargo test`; CI (GitHub Actions) also runs `cargo fmt --check` and `cargo clippy -- -D warnings`.
+- Releasing: bump `version` in `Cargo.toml`, commit, then push a matching tag (for example `git tag -a v0.2.0 -m "v0.2.0"` and `git push origin v0.2.0`); the Release workflow builds and attaches the exe, zip and checksums.
 - Each service's endpoint details live in `src/providers/<service>.rs`, so an endpoint change touches one file.
 
 ## Disclaimer

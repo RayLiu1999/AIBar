@@ -2,6 +2,9 @@
 
 **繁體中文** | [English](README.en.md)
 
+[![CI](https://github.com/RayLiu1999/AIBar/actions/workflows/ci.yml/badge.svg)](https://github.com/RayLiu1999/AIBar/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/RayLiu1999/AIBar)](https://github.com/RayLiu1999/AIBar/releases/latest)
+
 Windows 系統匣的 AI 訂閱用量小工具。不用開網頁或 CLI，看一眼托盤就知道 Claude、Codex 等服務的額度還剩多少、何時重置。
 
 - 托盤圖示直接寫著「還剩幾 %」，外框顏色代表是哪一家
@@ -36,19 +39,28 @@ Windows 系統匣的 AI 訂閱用量小工具。不用開網頁或 CLI，看一�
 
 ## 安裝
 
-目前需要自行建置。
+### 下載（建議）
+
+1. 到 [Releases](https://github.com/RayLiu1999/AIBar/releases/latest) 下載 `AIBar-<版本>-windows-x64.exe`（或內含 README、LICENSE 的 zip）。
+2. 放到固定位置，例如 `%LOCALAPPDATA%\Programs\AIBar\`，然後直接執行，不需要安裝任何 runtime（支援 Windows 10／11 x64）。
+3. 第一次執行時 Windows SmartScreen 可能顯示「Windows 已保護您的電腦」，因為 exe 沒有程式碼簽章；按「其他資訊」→「仍要執行」即可。
+4. 在設定中打開「開機時自動啟動」即可常駐。開機自啟記的是 exe 的路徑，所以之後別再搬動它；更新時直接用新版覆蓋同一個檔案（先從托盤右鍵「結束」）。
+
+可用 Release 附的 `SHA256SUMS.txt` 核對下載的檔案。
+
+### 自行建置
 
 1. 安裝 [Rust](https://rustup.rs/)（stable，目標 `x86_64-pc-windows-msvc`）。
 2. 安裝 Visual Studio Build Tools（或 Visual Studio），勾選「使用 C++ 的桌面開發」，內含 Windows SDK。
 3. 建置：
 
    ```powershell
-   git clone <repo-url> AIBar
+   git clone https://github.com/RayLiu1999/AIBar.git
    cd AIBar
    cargo build --release
    ```
 
-4. 把 `target\release\aibar.exe` 複製到固定位置（例如 `%LOCALAPPDATA%\Programs\AIBar\`）後執行。在設定中打開「開機時自動啟動」即可常駐。
+4. `target\release\aibar.exe` 就是成品，之後同上面「下載」的步驟 2–4。
 
 > 托盤圖示預設可能收在工作列的「^」裡，可以拖到工作列上常駐顯示。
 
@@ -81,7 +93,8 @@ Windows 系統匣的 AI 訂閱用量小工具。不用開網頁或 CLI，看一�
 
 - 技術：Rust + [Slint](https://slint.dev/)（UI 與系統托盤）、`ureq`（HTTP）、`windows` crate（Win32 與 WinRT）。
 - 規格書：[`docs/spec.md`](docs/spec.md)；名詞定義：[`CONTEXT.md`](CONTEXT.md)；架構決策：[`docs/adr/`](docs/adr/)。
-- 測試：`cargo test`。
+- 測試：`cargo test`；CI（GitHub Actions）另檢查 `cargo fmt --check` 與 `cargo clippy -- -D warnings`。
+- 發布：更新 `Cargo.toml` 的 `version` 並 commit 後，推送同版本的標籤（例如 `git tag -a v0.2.0 -m "v0.2.0"`、`git push origin v0.2.0`），Release workflow 會自動建置並附上 exe、zip 與檢查碼。
 - 每個服務的端點細節集中在 `src/providers/<服務>.rs`，端點改版時只需修改一個檔案。
 
 ## 注意事項

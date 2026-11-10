@@ -400,6 +400,9 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 ```
 AIBar/
 ├── AGENTS.md
+├── .github/workflows/        // ci.yml：fmt、clippy、測試；release.yml：推送 v* 標籤時建置並發布 Release
+├── .cargo/config.toml        // 靜態連結 C 執行階段（exe 不依賴 VCRUNTIME140.dll）
+├── rustfmt.toml              // 行寬 120
 ├── README.md                 // 說明（中文為主）；README.en.md 為英文版
 ├── LICENSE                   // MIT
 ├── CONTEXT.md                // 名詞定義
