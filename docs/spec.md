@@ -21,7 +21,7 @@ Nov 9, 2026 · @Ray（2026-11-10 v0–v2 與 OpenRouter 完成後同步；名詞
 **成功標準**
 
 - v0 完成後，Claude 與 Codex 用量能正確顯示（首次使用 Rust，時程預留緩衝）。
-- 資料與官方網頁或 CLI 顯示的用量誤差在一個背景刷新週期內；開啟視窗時誤差在半個背景刷新間隔內（Claude 5 分鐘、Codex 2.5 分鐘）。
+- 資料與官方網頁或 CLI 顯示的用量誤差在一個背景刷新週期內；開啟視窗時誤差在半個背景刷新間隔內（5 分鐘）。
 - 視窗隱藏時常駐記憶體盡量壓低、閒置時 CPU 接近 0，啟動後數秒內出現托盤圖示。2026-11-10 實測正式版：exe 8.3 MB；視窗隱藏時工作集 32 MB、私有記憶體 5 MB；閒置 30 秒 CPU 時間 0 ms。
 
 ## 2. 範圍
@@ -30,7 +30,7 @@ Nov 9, 2026 · @Ray（2026-11-10 v0–v2 與 OpenRouter 完成後同步；名詞
 
 | 版本 | 內容 | 驗收標準 |
 | --- | --- | --- |
-| v0 | Claude、Codex Provider；托盤數字圖示（焦點 Provider 的剩餘 %、代表色外框、低量轉色、警示標記）；主視窗（總覽與各 Provider 頁籤）顯示各額度視窗剩餘量、進度刻度與重置倒數；設定視窗（Provider 啟用與排序、顯示方式、開機自啟）；背景定期刷新（Claude 每 10 分鐘、Codex 每 5 分鐘）、開啟視窗時自動刷新；手動刷新；失敗時保留快照並顯示失敗原因；快照存檔（重開機後仍可顯示）；429 退避；右鍵選單（立即刷新、設定、關於、結束）；App 圖示 | 兩個 Provider 的數字與官方顯示一致 |
+| v0 | Claude、Codex Provider；托盤數字圖示（焦點 Provider 的剩餘 %、代表色外框、低量轉色、警示標記）；主視窗（總覽與各 Provider 頁籤）顯示各額度視窗剩餘量、進度刻度與重置倒數；設定視窗（Provider 啟用與排序、顯示方式、開機自啟）；背景定期刷新（每 10 分鐘）、開啟視窗時自動刷新；手動刷新；失敗時保留快照並顯示失敗原因；快照存檔（重開機後仍可顯示）；429 退避；右鍵選單（立即刷新、設定、關於、結束）；App 圖示 | 兩個 Provider 的數字與官方顯示一致 |
 | v1 ✓ | Antigravity Provider（本機 language server 探測） | Antigravity 開啟時能顯示用量，未開啟時顯示「未執行」 |
 | v2 ✓ | Command Code Provider（借用 CLI 的 API key，見 ADR-0004）；80% 與 95% 的 Windows Toast 通知 | 憑證失效時有明確提示，不會當機 |
 | v3 ✓ | OpenRouter Provider（設定中輸入 API key，DPAPI 加密儲存） | 額度與餘額正確；key 無效時有明確提示 |
@@ -107,13 +107,13 @@ flowchart BT
 
 ## 5. Provider 規格
 
-Claude、Codex、Command Code 借用 CLI 已登入的憑證，Antigravity 探測本機 App，OpenRouter 使用設定中輸入的 API key（官方公開 API）。除 OpenRouter 外皆為非公開端點，已於 2026-11-09／10 實測確認，仍可能改版。
+Claude、Codex、Command Code 借用 CLI 已登入的憑證，Antigravity 探測本機 App（App 沒開時改執行 agy CLI 的用量報告），OpenRouter 使用設定中輸入的 API key（官方公開 API）。除 OpenRouter 外皆為非公開端點，已於 2026-11-09／10 實測確認，仍可能改版。
 
 | Provider | 版本 | 認證來源 | 取得方式 | 方案名稱 |
 | --- | --- | --- | --- | --- |
 | Claude | v0 | `%USERPROFILE%\.claude\.credentials.json` 的 `claudeAiOauth.accessToken`（`expiresAt` 為毫秒，壽命約 8 小時） | `GET https://api.anthropic.com/api/oauth/usage?cedar_ember=1`，header：`Authorization: Bearer <token>`、`anthropic-beta: oauth-2025-04-20`、`User-Agent: claude-cli/<版本> (external, cli)` | `claudeAiOauth.subscriptionType` + `rateLimitTier`（例：`max` + `default_claude_max_5x` → 「Max 5x」） |
 | Codex | v0 | `%USERPROFILE%\.codex\auth.json` 的 `tokens.access_token`、`tokens.account_id`（JWT，壽命約 10 天） | `GET https://chatgpt.com/backend-api/wham/usage`，header：`Authorization: Bearer <token>`、`ChatGPT-Account-Id: <account_id>` | 回應的 `plan_type`（例：`plus` → 「Plus」） |
-| Antigravity | v1 | 無（本機探測） | 見下方「Antigravity 探測」 | `GetUserStatus` 的 `userStatus.planStatus.planInfo.planName`（例：「Pro」） |
+| Antigravity | v1 | 無（本機探測；或 agy CLI 已登入的帳號） | 見下方「Antigravity 探測」 | `GetUserStatus` 的 `userStatus.planStatus.planInfo.planName`（例：「Pro」） |
 | Command Code | v2 | `%USERPROFILE%\.commandcode\auth.json` 的 `apiKey`、`userId` | `GET https://api.commandcode.ai/alpha/billing/credits` 與 `/alpha/billing/subscriptions`，header：`Authorization: Bearer <apiKey>` | 訂閱的 `planId` 對照 CLI 內建表（例：`individual-go-v1` →「Go」，月額度 $10） |
 | OpenRouter | v3 | 設定視窗輸入的 API key（DPAPI 加密存於 `secrets.bin`） | `GET https://openrouter.ai/api/v1/key` 與 `/api/v1/credits`，header：`Authorization: Bearer <key>` | `is_free_tier` →「免費」或「付費」 |
 
@@ -141,7 +141,13 @@ Claude、Codex、Command Code 借用 CLI 已登入的憑證，Antigravity 探測
 - 以 `GetExtendedTcpTable`（擁有者 PID、只取 LISTEN）列出該行程在聽的連接埠，逐一 `POST https://127.0.0.1:<port>/exa.language_server_pb.LanguageServerService/GetUnleashData`，第一個 200 即為目標；都不通時改用 `http://127.0.0.1:<extension_server_port>`。
 - header：`X-Codeium-Csrf-Token: <token>`、`Connect-Protocol-Version: 1`；body：`{"metadata":{"ideName":"antigravity","extensionName":"antigravity","locale":"en","ideVersion":"unknown"}}`。憑證為自簽，**只對 127.0.0.1 停用驗證**（另一個 HTTP agent，拒絕非本機網址）。
 - 額度優先取 `RetrieveUserQuotaSummary`：`response.groups[].buckets[]` 的 `remainingFraction`、`resetTime`、`window`（`"5h"`／`"weekly"`）。通用名稱（「Weekly Limit Remaining」）改為「{組名}・5 小時／每週」，組名去掉結尾的「Models」；有專屬名稱的（例：「Gemini 4 Argon Weekly」）照原名。後備為 `GetUserStatus` 的 `clientModelConfigs[].quotaInfo`，分成 Gemini 與 Claude + GPT 兩組取剩最少者。
-- 找不到行程時為 `NotRunning`：不算失敗、不加警示標記，卡片以一般文字提示「Antigravity 未執行，開啟 App 後會自動更新」。
+- App 沒開（或問不到）時，若有安裝 agy CLI，改執行 `agy -p /usage --output-format json --print-timeout 90s` 取得非互動的用量報告：`{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[…]}}}`，`data` 與 `RetrieveUserQuotaSummary` 同格式但欄位為 snake_case（`name`、`id`、`remaining_fraction`、`reset_time`、`window`）。只讀用量，不送出模型提示、不耗額度。
+  - 執行檔：`ANTIGRAVITY_CLI_PATH`（有設定時只用它）→ `%LOCALAPPDATA%\agy\bin\agy.exe` → PATH 中的 `agy.exe`。
+  - 先以 `agy --version` 確認版本 ≥ 1.1.11（更舊的版本可能把 `/usage` 當成提示送給模型）；同一個執行檔只問一次。agy 1.2.2 起本機 HTTPS 服務需要拿不到的 CSRF token，因此只用報告模式。
+  - 環境變數 `AGY_CLI_DISABLE_AUTO_UPDATE=true`、`BROWSER` 指向不存在的程式；不顯示主控台視窗；整個行程樹放進 Job Object，結束或逾時（100 秒）時一併終止；工作目錄 `%TEMP%\AiBar-agy`；輸出上限 1 MB。
+  - 每次約 5–9 秒。報告沒有方案名稱，沿用上一份快照的方案。`status` 不是 `SUCCESS` 時視為 `NotLoggedIn`（提示執行 `agy` 登入）。
+  - 做法參考 CodexBar（2026-11 實測 agy 1.5.3）。
+- App 與 agy CLI 都找不到時為 `NotRunning`：不算失敗、不加警示標記，卡片以一般文字提示「Antigravity 未執行（也找不到 agy CLI），開啟 App 後會自動更新」。
 - 備註：從 VS Code 終端機啟動 Antigravity 時，若環境變數 `ELECTRON_RUN_AS_NODE=1`（VS Code 擴充主機會設定）會讓它直接退出；這只影響開發測試，不影響 AIBar。
 
 **Command Code 回應解析**
@@ -175,7 +181,7 @@ pub trait UsageProvider: Send + Sync {
     fn credentials_present(&self) -> bool;
     /// 目前登入帳號的雜湊（只讀本機檔案，不連網），用於丟棄別的帳號的快照
     fn current_account_hash(&self) -> Option<String>;
-    /// 背景刷新間隔（預設 5 分鐘，Claude 10 分鐘）
+    /// 背景刷新間隔（統一 10 分鐘；Provider 可覆寫，目前都沿用預設）
     fn refresh_interval(&self) -> Duration;
     fn fetch(&self) -> Result<Snapshot, FetchFailure>;
 }
@@ -229,7 +235,7 @@ pub struct ProviderStatus {
 | 概念 | 規則 |
 | --- | --- |
 | 已重置 | 額度視窗的 `resets_at` 已過，用量視為 0%，卡片顯示「已重置」 |
-| 舊快照 | `fetched_at` 超過該 Provider 的 3 個背景刷新間隔（Claude 30 分鐘、Codex 15 分鐘） |
+| 舊快照 | `fetched_at` 超過該 Provider 的 3 個背景刷新間隔（30 分鐘） |
 | 帳號不符 | 啟動時讀到的快照 `account_hash` 與目前憑證不同，丟棄該快照 |
 
 ## 7. UI 與互動
@@ -288,7 +294,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 | `RateLimited` | 限流中，HH:MM 自動重試 |
 | `Network` | 無法連線，下次排程將重試 |
 | `BadResponse` | 回應格式改變 |
-| `NotRunning` | Antigravity 未執行，開啟 App 後會自動更新（一般文字，非警示） |
+| `NotRunning` | Antigravity 未執行（也找不到 agy CLI），開啟 App 後會自動更新（一般文字，非警示） |
 
 **右鍵選單**
 
@@ -343,7 +349,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 ```
 
 - 首次啟動（`config.json` 不存在）：憑證檔存在的 Provider 預設啟用，其餘停用，結果寫入 `config.json`；之後只依 config。`providers` 的陣列順序即顯示順序；之後新增的 Provider 會附加在最後，偵測得到登入憑證的預設啟用。
-- 刷新間隔（Claude 10 分鐘、Codex 5 分鐘）、開啟視窗自動刷新門檻（刷新間隔的一半）、手動刷新下限（1 分鐘）、顏色門檻（70／90）、通知門檻（80／95）皆為程式常數，不可設定。
+- 刷新間隔（10 分鐘）、開啟視窗自動刷新門檻（刷新間隔的一半）、手動刷新下限（1 分鐘）、顏色門檻（70／90）、通知門檻（80／95）皆為程式常數，不可設定。
 - 開機自啟以登錄檔為唯一來源：`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，設定視窗的開關直接讀寫登錄檔，不需系統管理員權限。使用者在工作管理員或「設定 → 應用程式 → 啟動」停用時，Windows 會在 `Explorer\StartupApproved\Run` 記下停用標記（第一個位元組為奇數）：判斷是否啟用要一併檢查，從 AIBar 開啟時清除該標記。
 
 **機密處理原則**
@@ -365,7 +371,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 | 觸發 | 規則 | 遵守退避 |
 | --- | --- | --- |
 | 啟動 | 先載入 `snapshots.json`（帳號雜湊與目前登入不符的捨棄）；快照未滿一個背景刷新週期的等到期再刷新，其餘立即刷新（避免頻繁重開程式時打到限流） | 是 |
-| 背景排程 | 依 Provider：Claude 每 10 分鐘（端點限流以帳號計，其他裝置或工具查詢同一帳號也算）、Codex 每 5 分鐘 | 是 |
+| 背景排程 | 每 10 分鐘（開啟視窗時資料超過 5 分鐘會自動刷新，背景只需讓托盤與通知大致即時；Claude 端點限流以帳號計，也不宜更頻繁） | 是 |
 | 開啟視窗 | 快照超過該 Provider 刷新間隔的一半時刷新 | 是 |
 | 手動（視窗按鈕、右鍵「立即刷新」） | 立刻刷新全部啟用的 Provider；同一 Provider 距上次送出未滿 1 分鐘則略過，避免連按觸發限流 | **否** |
 | 從睡眠恢復 | 排程器每分鐘以系統時間檢查是否到期，恢復後最慢 1 分鐘內補上刷新 | 是 |
@@ -383,7 +389,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 | 網路逾時、連線失敗或 5xx | `Network` | 下次排程照常重試 |
 | 回應格式無法解析 | `BadResponse` | 日誌記錄狀態碼（不含內容） |
 | 回應 429 | `RateLimited` | 該 Provider 退避：間隔加倍，上限 30 分鐘；有 `Retry-After`（秒）且更晚時以它為準；成功後恢復原本的刷新間隔 |
-| Antigravity 行程不存在 | `NotRunning` | 不視為錯誤，不加警示標記 |
+| Antigravity 行程不存在且沒有 agy CLI | `NotRunning` | 不視為錯誤，不加警示標記 |
 
 所有情況都保留既有快照。
 
@@ -500,7 +506,7 @@ v0 先交付 Claude 與 Codex，其餘依序加入；六角形為進到下一階
 | Claude 與 Codex 用量端點為非公開，可能隨時改版 | 該 Provider 無法取得新資料 | 端點細節集中於單一模組；Claude 有新舊兩種欄位可退回；失敗時保留快照並顯示「回應格式改變」 |
 | 憑證檔位置或格式改變 | 無法讀取 token | 顯示「找不到登入資訊」；路徑集中於 Provider 模組 |
 | Claude token 約 8 小時過期 | 長時間未開 Claude Code 時無新資料 | 不自行 refresh（ADR-0001）；保留快照並提示執行 CLI |
-| 頻繁請求被限流（實測 Claude 端點以帳號計，同帳號在其他裝置或工具查詢也會累計；429 回應不帶限流標頭） | 更久拿不到資料 | Claude 背景 10 分鐘；開啟視窗門檻為刷新間隔一半；手動刷新 1 分鐘下限；遵守 429 退避與 Retry-After；失敗時保留快照；啟動時快照未滿一個間隔不刷新 |
+| 頻繁請求被限流（實測 Claude 端點以帳號計，同帳號在其他裝置或工具查詢也會累計；429 回應不帶限流標頭） | 更久拿不到資料 | 背景刷新 10 分鐘；開啟視窗門檻為刷新間隔一半；手動刷新 1 分鐘下限；遵守 429 退避與 Retry-After；失敗時保留快照；啟動時快照未滿一個間隔不刷新 |
 | Command Code 帳務 API（`/alpha/…`）為非公開且標示 alpha | 改版後無法取得資料 | 端點集中於單一模組；訂閱資訊取不到時仍顯示 5 小時與每週視窗 |
 | Antigravity 本機探測屬實驗性做法；Google 未提供官方額度 API | 版本更新後可能失效 | 只讀本機 language server、不連 Google；額度摘要失敗時退回 GetUserStatus；失效時顯示錯誤，不影響其他 Provider |
 | 帳號層級的使用規範 | 使用非公開端點可能不被官方支援 | 僅供個人或少數同事使用，低頻率輪詢 |

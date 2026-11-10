@@ -13,8 +13,9 @@ use crate::model::{FetchFailure, ProviderStatus, Snapshot};
 use crate::providers::UsageProvider;
 use crate::snapshot_store;
 
-/// 預設背景刷新間隔（Provider 可覆寫，見 `UsageProvider::refresh_interval`）
-pub const DEFAULT_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
+/// 預設背景刷新間隔（Provider 可覆寫，見 `UsageProvider::refresh_interval`）。
+/// 開啟視窗時資料超過半個間隔就會刷新，背景刷新只需讓托盤與通知大致即時，因此統一 10 分鐘。
+pub const DEFAULT_REFRESH_INTERVAL: Duration = Duration::from_secs(10 * 60);
 /// 手動刷新的下限：同一 Provider 距上次送出未滿此時間就略過，避免連按觸發限流
 const MANUAL_MIN_GAP: Duration = Duration::from_secs(60);
 /// 429 退避上限
@@ -234,7 +235,11 @@ fn finish(slot: &mut Slot, result: Result<Snapshot, FetchFailure>) {
     let now = SystemTime::now();
     slot.status.refreshing = false;
     match result {
-        Ok(snapshot) => {
+        Ok(mut snapshot) => {
+            // 這次的來源沒有方案名稱時（例如 Antigravity 改從 agy CLI 取得），沿用上一份快照的
+            if snapshot.plan.is_none() {
+                snapshot.plan = slot.status.snapshot.as_ref().and_then(|s| s.plan.clone());
+            }
             slot.status.snapshot = Some(snapshot);
             slot.status.last_failure = None;
             slot.interval = slot.base_interval;

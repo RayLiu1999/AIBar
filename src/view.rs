@@ -52,10 +52,10 @@ pub fn provider_meta(id: &str) -> ProviderMeta {
         },
         "antigravity" => ProviderMeta {
             name: "Antigravity",
-            cli: "",
+            cli: "agy",
             mono: "A",
             accent: [0x7B, 0xC8, 0x8A],
-            source: "本機 Antigravity App 的 language server",
+            source: "本機 Antigravity App；App 沒開時改用 agy CLI",
             usage_url: "",
         },
         "commandcode" => ProviderMeta {
@@ -264,7 +264,7 @@ fn failure_text_generic(f: &FetchFailure, cli: &str) -> String {
         }
         FetchFailure::Network => "無法連線，下次排程將重試".into(),
         FetchFailure::BadResponse => "回應格式改變".into(),
-        FetchFailure::NotRunning => "Antigravity 未執行，開啟 App 後會自動更新".into(),
+        FetchFailure::NotRunning => "Antigravity 未執行（也找不到 agy CLI），開啟 App 後會自動更新".into(),
     }
 }
 

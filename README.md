@@ -17,7 +17,7 @@ Windows 系統匣的 AI 訂閱用量小工具。不用開網頁或 CLI，看一�
 | --- | --- | --- |
 | Claude（訂閱） | 5 小時、每週（含指定模型），與保留重置次數及到期時間 | Claude Code 的登入憑證 `~/.claude/.credentials.json` |
 | Codex（訂閱） | 5 小時、每週，與保留重置次數及到期時間 | Codex CLI 的登入憑證 `~/.codex/auth.json` |
-| Antigravity | 各模型組的 5 小時、每週 | 執行中的 Antigravity App（本機 language server，不連外網） |
+| Antigravity | 各模型組的 5 小時、每週 | 執行中的 Antigravity App（本機 language server，不連外網）；App 沒開時改用已登入的 agy CLI |
 | Command Code | 5 小時、每週、每月，與本期花費 | Command Code CLI 的登入憑證 `~/.commandcode/auth.json` |
 | OpenRouter | Key 的花費上限、儲值餘額 | 在設定視窗貼上的 API key（以 Windows DPAPI 加密保存） |
 
@@ -32,7 +32,7 @@ Windows 系統匣的 AI 訂閱用量小工具。不用開網頁或 CLI，看一�
 - **設定**：開機自啟、顯示剩餘或已使用、各服務的啟用開關與排序、OpenRouter API key、額度通知。
 - **通知**：任一額度已用超過 80% 與 95% 時各發一則 Windows 通知，重置後才會再通知。
 
-刷新頻率：Claude 每 10 分鐘（它的用量端點限流以帳號計，Mac 上的 CodexBar 或 Claude Code 的 `/usage` 也會算進去），其他每 5 分鐘；打開視窗時資料較舊會自動刷新，也可以手動刷新。
+刷新頻率：背景每 10 分鐘；打開視窗時資料超過 5 分鐘會自動刷新，也可以手動刷新。Claude 的用量端點限流以帳號計，Mac 上的 CodexBar 或 Claude Code 的 `/usage` 也會算進去，不宜更頻繁。
 
 ## 安裝
 
@@ -73,7 +73,7 @@ Windows 系統匣的 AI 訂閱用量小工具。不用開網頁或 CLI，看一�
 | --- | --- |
 | Claude 顯示「限流中」 | 端點以帳號限流，等提示的時間會自動重試。若同時在別台電腦執行 CodexBar 等工具，可拉長它們的刷新間隔 |
 | 顯示「Token 已過期」 | 在終端機執行一次對應的 CLI（`claude`、`codex`），下一次刷新就會恢復 |
-| Antigravity 顯示「未執行」 | 開啟 Antigravity App 後會自動更新；這不算錯誤 |
+| Antigravity 顯示「未執行」 | 開啟 Antigravity App，或安裝並登入 agy CLI，就會自動更新；這不算錯誤 |
 | 沒有收到通知 | 執行 `aibar.exe --notify-test` 發一則測試通知，並確認 Windows「設定 → 系統 → 通知」中 AIBar 沒有被關閉 |
 | 數字和官方不同 | 執行 `aibar.exe --probe claude`（或其他服務 id）檢視端點回應結構（字串值會遮蔽） |
 

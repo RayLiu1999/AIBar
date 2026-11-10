@@ -7,7 +7,7 @@
 //!
 //! 只讀取憑證檔，絕不寫入；token 過期時不自行 refresh（ADR-0001）。
 //! 此端點限流嚴格且以帳號計（其他裝置或工具查詢同一帳號也算），
-//! 因此背景刷新間隔拉長為 10 分鐘。
+//! 背景刷新間隔不可短於預設的 10 分鐘。
 
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -57,10 +57,6 @@ impl UsageProvider for Claude {
 
     fn current_account_hash(&self) -> Option<String> {
         organization_uuid().map(|org| account_hash(&org))
-    }
-
-    fn refresh_interval(&self) -> Duration {
-        Duration::from_secs(10 * 60)
     }
 
     fn fetch(&self) -> Result<Snapshot, FetchFailure> {

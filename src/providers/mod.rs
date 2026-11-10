@@ -1,6 +1,7 @@
 //! Provider：各 AI 服務的用量來源（規格書第 5 節）。
 //! 每個 Provider 的端點細節集中在自己的模組，端點改版時只需修改一個檔案。
 
+mod agy;
 pub mod antigravity;
 pub mod claude;
 pub mod codex;
@@ -160,7 +161,7 @@ fn handle_response(
 }
 
 /// 印出 JSON 結構：數字、布林照印；代號型字串（如 "session"）與 ISO 時間照印，其餘字串遮蔽
-fn print_shape(v: &Value, indent: usize) {
+pub(crate) fn print_shape(v: &Value, indent: usize) {
     let pad = "  ".repeat(indent);
     match v {
         Value::Object(map) => {

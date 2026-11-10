@@ -8,7 +8,8 @@
 //!    header `X-Codeium-Csrf-Token`、`Connect-Protocol-Version: 1`；憑證為自簽，只對 127.0.0.1 放行。
 //!    依序嘗試 `RetrieveUserQuotaSummary`、`GetUserStatus`；HTTPS 不通時改用 extension server 的 HTTP。
 //!
-//! 找不到行程時回報「未執行」（不視為錯誤）。做法參考 CodexBar 的 Antigravity 文件。
+//! App 沒開時改用 agy CLI（見 `agy` 模組）；兩者都沒有時回報「未執行」（不視為錯誤）。
+//! 做法參考 CodexBar 的 Antigravity 文件。
 
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -25,7 +26,7 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
 };
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 
-use super::{UsageProvider, account_hash, post_json_local};
+use super::{UsageProvider, account_hash, agy, post_json_local};
 use crate::model::{FetchFailure, Snapshot, UsageWindow};
 
 const SERVICE: &str = "exa.language_server_pb.LanguageServerService";
@@ -54,9 +55,9 @@ impl UsageProvider for Antigravity {
         "antigravity"
     }
 
-    /// 有安裝 Antigravity 即視為可用（首次啟動時預設啟用）
+    /// 有安裝 Antigravity App 或 agy CLI 即視為可用（首次啟動時預設啟用）
     fn credentials_present(&self) -> bool {
-        install_dir().is_some_and(|d| d.exists())
+        install_dir().is_some_and(|d| d.exists()) || agy::find().is_some()
     }
 
     /// 帳號只能在 App 執行時問 language server，離線無法判斷
@@ -66,9 +67,6 @@ impl UsageProvider for Antigravity {
 
     fn fetch(&self) -> Result<Snapshot, FetchFailure> {
         let mut servers = find_servers();
-        if servers.is_empty() {
-            return Err(FetchFailure::NotRunning);
-        }
         servers.sort_by_key(|s| s.ide);
         let mut last = FetchFailure::NotRunning;
         for server in &servers {
@@ -77,7 +75,11 @@ impl UsageProvider for Antigravity {
                 Err(e) => last = e,
             }
         }
-        Err(last)
+        // App 沒開（或問不到）時改用 agy CLI；沒裝 CLI 就維持「未執行」或 App 的失敗原因
+        match agy::find() {
+            Some(path) => agy::fetch(&path),
+            None => Err(last),
+        }
     }
 }
 
@@ -174,26 +176,34 @@ fn window_secs(id: &str) -> Option<u64> {
     }
 }
 
-/// `RetrieveUserQuotaSummary`：`response.groups[].buckets[]`，每個 bucket 有
-/// `remainingFraction`、`resetTime`、`window`（"5h"／"weekly"）；舊版放在 `remaining` 底下
-fn parse_summary(v: &Value) -> Option<Vec<UsageWindow>> {
+/// 取第一個存在的欄位（App 的回應用 camelCase，agy CLI 的報告用 snake_case）
+fn field<'a>(v: &'a Value, keys: &[&str]) -> &'a Value {
+    keys.iter().map(|k| &v[*k]).find(|x| !x.is_null()).unwrap_or(&Value::Null)
+}
+
+/// 額度摘要：App 的 `RetrieveUserQuotaSummary`（`response.groups[]`）或 agy CLI 的
+/// `/usage` 報告（`command.data.groups[]`）。每個 bucket 有剩餘比例、重置時間、
+/// `window`（"5h"／"weekly"）；App 舊版放在 `remaining` 底下
+pub(super) fn parse_summary(v: &Value) -> Option<Vec<UsageWindow>> {
     let root = if v["response"].is_object() { &v["response"] } else { v };
     let mut windows = Vec::new();
     for group in root["groups"].as_array()? {
-        let group_name = group["displayName"]
+        let group_name = field(group, &["displayName", "display_name", "name"])
             .as_str()
             .unwrap_or_default()
             .trim_end_matches(" Models")
             .trim_end_matches(" models");
         for b in group["buckets"].as_array().into_iter().flatten() {
-            let Some(frac) =
-                b["remainingFraction"].as_f64().or_else(|| b["remaining"]["remainingFraction"].as_f64())
+            let remaining = &b["remaining"];
+            let Some(frac) = field(b, &["remainingFraction", "remaining_fraction"])
+                .as_f64()
+                .or_else(|| field(remaining, &["remainingFraction", "remaining_fraction"]).as_f64())
             else {
                 continue;
             };
-            let id = b["bucketId"].as_str().unwrap_or_default();
+            let id = field(b, &["bucketId", "bucket_id", "id"]).as_str().unwrap_or_default();
             let window = b["window"].as_str().unwrap_or(id);
-            let display = b["displayName"].as_str().unwrap_or_default();
+            let display = field(b, &["displayName", "display_name", "name"]).as_str().unwrap_or_default();
             // 通用名稱（「Weekly Limit Remaining」等）改用「組名・5 小時／每週」；
             // 有專屬名稱的（例如某個模型的每週額度）照原名，去掉結尾的「Limit」
             let generic = display.is_empty() || display.contains("Limit Remaining");
@@ -209,7 +219,8 @@ fn parse_summary(v: &Value) -> Option<Vec<UsageWindow>> {
             windows.push(UsageWindow {
                 name,
                 used_percent: ((1.0 - frac) * 100.0).clamp(0.0, 100.0),
-                resets_at: parse_reset(&b["resetTime"]).or_else(|| parse_reset(&b["remaining"]["resetTime"])),
+                resets_at: parse_reset(field(b, &["resetTime", "reset_time"]))
+                    .or_else(|| parse_reset(field(remaining, &["resetTime", "reset_time"]))),
                 window_secs: window_secs(window).or_else(|| window_secs(id)),
             });
         }

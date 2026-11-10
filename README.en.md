@@ -17,7 +17,7 @@ Inspired by [CodexBar](https://github.com/steipete/CodexBar) for macOS, delibera
 | --- | --- | --- |
 | Claude (subscription) | 5-hour, weekly (including per-model), banked resets and their expiry | Claude Code credentials `~/.claude/.credentials.json` |
 | Codex (subscription) | 5-hour, weekly, banked resets and their expiry | Codex CLI credentials `~/.codex/auth.json` |
-| Antigravity | 5-hour and weekly per model group | The running Antigravity app (local language server, no internet access) |
+| Antigravity | 5-hour and weekly per model group | The running Antigravity app (local language server, no internet access); the signed-in `agy` CLI when the app is closed |
 | Command Code | 5-hour, weekly, monthly, and spend this period | Command Code CLI credentials `~/.commandcode/auth.json` |
 | OpenRouter | Key spending limit, credit balance | An API key pasted in Settings (stored encrypted with Windows DPAPI) |
 
@@ -32,7 +32,7 @@ Any service whose CLI you have logged in to is enabled automatically on first la
 - **Settings**: start with Windows, show remaining or used, enable and order services, OpenRouter API key, quota notifications.
 - **Notifications**: a Windows notification when any quota passes 80% and 95% used, once each until it resets.
 
-Refresh rate: Claude every 10 minutes (its usage endpoint is rate-limited per account, and CodexBar on a Mac or Claude Code's `/usage` count too), others every 5 minutes. Opening the window refreshes stale data, and you can refresh manually.
+Refresh rate: every 10 minutes in the background; opening the window refreshes data older than 5 minutes, and you can refresh manually. Claude's usage endpoint is rate-limited per account (CodexBar on a Mac or Claude Code's `/usage` count too), so it should not be polled more often.
 
 > The UI text is currently in Traditional Chinese.
 
@@ -75,7 +75,7 @@ You currently need to build it yourself.
 | --- | --- |
 | Claude shows "rate limited" | The endpoint is limited per account; AIBar retries at the time shown. If CodexBar or a similar tool runs on another machine, lengthen its refresh interval |
 | "Token expired" | Run the matching CLI once in a terminal (`claude`, `codex`); the next refresh recovers |
-| Antigravity shows "not running" | Open the Antigravity app and it updates automatically; this is not an error |
+| Antigravity shows "not running" | Open the Antigravity app, or install and sign in to the `agy` CLI, and it updates automatically; this is not an error |
 | No notifications | Run `aibar.exe --notify-test` to send a test notification, and check that AIBar is allowed under Windows Settings → System → Notifications |
 | Numbers differ from the official page | Run `aibar.exe --probe claude` (or another service id) to print the endpoint's response structure with string values masked |
 
