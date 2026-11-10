@@ -1,0 +1,3 @@
+# 靜態連結 C 執行階段（VCRUNTIME140.dll），讓 exe 不必另裝 Visual C++ 可轉散發套件
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

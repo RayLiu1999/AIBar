@@ -100,8 +100,10 @@ fn parse_version(s: &str) -> Option<(u32, u32, u32)> {
 
 /// 執行檔的版本；同一個檔案（路徑、大小、修改時間不變）只問一次
 fn version(exe: &Path) -> Option<(u32, u32, u32)> {
+    /// 執行檔的識別（路徑、大小、修改時間）與其版本
     type Key = (PathBuf, u64, Option<SystemTime>);
-    static CACHE: Mutex<Option<(Key, (u32, u32, u32))>> = Mutex::new(None);
+    type Version = (u32, u32, u32);
+    static CACHE: Mutex<Option<(Key, Version)>> = Mutex::new(None);
 
     let meta = std::fs::metadata(exe).ok()?;
     let key: Key = (exe.to_path_buf(), meta.len(), meta.modified().ok());

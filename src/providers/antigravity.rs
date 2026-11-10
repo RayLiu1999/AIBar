@@ -310,12 +310,11 @@ fn find_servers() -> Vec<Server> {
     while ok {
         let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
         let exe = String::from_utf16_lossy(&entry.szExeFile[..len]).to_ascii_lowercase();
-        if exe.starts_with("language_server") || exe.starts_with("language-server") {
-            if let Some(server) = command_line(entry.th32ProcessID)
-                .and_then(|cmd| parse_cmdline(entry.th32ProcessID, &cmd))
-            {
-                found.push(server);
-            }
+        if (exe.starts_with("language_server") || exe.starts_with("language-server"))
+            && let Some(server) =
+                command_line(entry.th32ProcessID).and_then(|cmd| parse_cmdline(entry.th32ProcessID, &cmd))
+        {
+            found.push(server);
         }
         ok = unsafe { Process32NextW(snap, &mut entry) }.is_ok();
     }

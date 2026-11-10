@@ -197,8 +197,7 @@ mod tests {
 
     #[test]
     fn 序列化格式() {
-        let mut cfg = Config::default();
-        cfg.display = Display::Used;
+        let cfg = Config { display: Display::Used, ..Config::default() };
         let text = serde_json::to_string(&cfg).unwrap();
         assert!(text.contains(r#""display":"used""#));
         assert_eq!(serde_json::from_str::<Config>(&text).unwrap(), cfg);

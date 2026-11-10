@@ -36,8 +36,9 @@ pub fn tray_icon_size() -> u32 {
 fn into_image(canvas: Canvas) -> Image {
     let rgba = canvas.to_rgba();
     let mut buf = SharedPixelBuffer::<Rgba8Pixel>::new(canvas.size, canvas.size);
-    for (dst, p) in buf.make_mut_slice().iter_mut().zip(rgba.chunks_exact(4)) {
-        *dst = Rgba8Pixel { r: p[0], g: p[1], b: p[2], a: p[3] };
+    for (dst, p) in buf.make_mut_slice().iter_mut().zip(rgba.as_chunks::<4>().0) {
+        let [r, g, b, a] = *p;
+        *dst = Rgba8Pixel { r, g, b, a };
     }
     Image::from_rgba8(buf)
 }
@@ -94,7 +95,7 @@ fn text_mask(text: &str, size: u32, em_px: i32, face: &str) -> Option<Vec<u8>> {
 
         // DIB 為 BGRA；白字的任一通道即覆蓋率
         let raw = std::slice::from_raw_parts(bits as *const u8, (size * size * 4) as usize);
-        let mask = raw.chunks_exact(4).map(|p| p[0].max(p[1]).max(p[2])).collect();
+        let mask = raw.as_chunks::<4>().0.iter().map(|p| p[0].max(p[1]).max(p[2])).collect();
 
         SelectObject(hdc, old_font);
         SelectObject(hdc, old_bmp);
