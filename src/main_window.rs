@@ -26,7 +26,7 @@ const INITIAL_H: f32 = 640.0;
 /// 點托盤會讓視窗先失焦；這段時間內失焦的視窗，仍視為點擊當下在最前面
 const FOCUS_GRACE: Duration = Duration::from_millis(400);
 /// 視窗顯示後延遲這麼久再搶前景（視窗要到下一輪事件迴圈才真正出現）
-const FOCUS_DELAY: Duration = Duration::from_millis(30);
+pub const FOCUS_DELAY: Duration = Duration::from_millis(30);
 
 /// 游標所在螢幕工作區正中央的視窗左上角位置（實體像素）
 fn initial_position() -> Option<PhysicalPosition> {

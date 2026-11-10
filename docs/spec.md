@@ -500,6 +500,14 @@ v0 先交付 Claude 與 Codex，其餘依序加入；六角形為進到下一階
 5. ~~加入 Command Code 與 Toast 通知（v2）~~（2026-11-10 完成；改用 CLI 的 API key，見 ADR-0004）。
 6. ~~加入 OpenRouter（v3）~~（2026-11-10 完成）。
 
+**未來計畫**
+
+- **程式碼簽章（SignPath Foundation）**：exe 目前沒有簽章，第一次執行會被 SmartScreen 擋下，公司電腦的資安軟體也可能較嚴格對待。SignPath Foundation 為開源專案免費簽章（發行者顯示為「SignPath Foundation」），條件見 [signpath.org/terms](https://signpath.org/terms)。
+  - **先確認的資格疑慮**：條款要求「所有元件使用 OSI 認可授權、且沒有商業雙重授權」。AIBar 以 Slint 的 Royalty-free 授權使用 Slint，而 Slint 本身是 GPLv3／商業雙授權；申請前先寫信詢問 SignPath 是否接受（必要時評估改用 Slint 的 GPLv3 授權，AIBar 隨之改為 GPLv3）。
+  - **審查時主動說明**：讀取各 CLI 的本機憑證、讀取 Antigravity 行程命令列、以 Claude Code CLI 的 User-Agent 查詢，都只在使用者本機、以使用者自己的帳號進行。
+  - **要補的項目**：GitHub 與 SignPath 開啟 MFA；README 加入「Code signing policy」段落（角色與成員、「Free code signing provided by SignPath.io, certificate by SignPath Foundation」、隱私說明）；release.yml 改為上傳未簽章 exe → `signpath/github-action-submit-signing-request` 送簽（每次發布手動核准）→ 簽好的檔案放進 Release；確認 exe 的產品名稱與版本資訊。
+  - **限制**：只能簽 GitHub Actions 建出的檔案；剛簽好時 SmartScreen 仍可能警告，信譽需隨下載量累積；新專案信譽不足可能被拒。
+
 ## 12. 風險與待驗證事項
 
 最大的風險是用量端點為非公開，且憑證檔位置與格式可能變動，所以每個 Provider 隔離成獨立模組，並在解析失敗時保留快照。

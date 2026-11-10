@@ -271,7 +271,13 @@ impl App {
                 w.set_page(page);
             }
             let _ = w.show();
-            tray_icon::apply_app_icon(w.window());
+            // 底層視窗要到下一輪事件迴圈才建立，第一次開啟時立刻設定圖示會沒有效果
+            let weak = w.as_weak();
+            slint::Timer::single_shot(main_window::FOCUS_DELAY, move || {
+                if let Some(w) = weak.upgrade() {
+                    tray_icon::apply_app_icon(w.window());
+                }
+            });
         }
     }
 }
