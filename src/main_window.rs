@@ -8,13 +8,10 @@ use std::time::{Duration, Instant};
 use slint::winit_030::winit::event::WindowEvent;
 use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::winit_030::{EventResult, WinitWindowAccessor};
-use slint::{
-    CloseRequestResponse, ComponentHandle, ModelRc, PhysicalPosition, PhysicalSize, VecModel,
-};
+use slint::{CloseRequestResponse, ComponentHandle, ModelRc, PhysicalPosition, PhysicalSize, VecModel};
 use windows::Win32::Foundation::{HWND, POINT};
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, MONITORINFO,
-    MonitorFromPoint,
+    GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, MONITORINFO, MonitorFromPoint,
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, SetForegroundWindow};
@@ -36,7 +33,10 @@ fn initial_position() -> Option<PhysicalPosition> {
     let mut p = POINT::default();
     unsafe { GetCursorPos(&mut p) }.ok()?;
     let hmon = unsafe { MonitorFromPoint(p, MONITOR_DEFAULTTONEAREST) };
-    let mut mi = MONITORINFO { cbSize: size_of::<MONITORINFO>() as u32, ..Default::default() };
+    let mut mi = MONITORINFO {
+        cbSize: size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
     if !unsafe { GetMonitorInfoW(hmon, &mut mi) }.as_bool() {
         return None;
     }
@@ -56,7 +56,10 @@ fn initial_position() -> Option<PhysicalPosition> {
 
 /// 存下的位置是否仍在某個螢幕上（螢幕可能已拔除或改變排列）
 fn on_some_monitor(g: &WindowGeometry) -> bool {
-    let center = POINT { x: g.x + g.width as i32 / 2, y: g.y + 20 };
+    let center = POINT {
+        x: g.x + g.width as i32 / 2,
+        y: g.y + 20,
+    };
     !unsafe { MonitorFromPoint(center, MONITOR_DEFAULTTONULL) }.is_invalid()
 }
 
@@ -64,7 +67,9 @@ fn on_some_monitor(g: &WindowGeometry) -> bool {
 fn bring_to_front(window: &slint::Window) {
     window.with_winit_window(|w| {
         let Ok(handle) = w.window_handle() else { return };
-        let RawWindowHandle::Win32(h) = handle.as_raw() else { return };
+        let RawWindowHandle::Win32(h) = handle.as_raw() else {
+            return;
+        };
         let hwnd = HWND(h.hwnd.get() as *mut core::ffi::c_void);
         if !unsafe { SetForegroundWindow(hwnd) }.as_bool() {
             log!("[視窗] 無法取得前景焦點");
@@ -153,7 +158,12 @@ impl MainWindowHost {
     pub fn geometry(&self) -> WindowGeometry {
         let pos = self.window.window().position();
         let size = self.window.window().size();
-        WindowGeometry { x: pos.x, y: pos.y, width: size.width, height: size.height }
+        WindowGeometry {
+            x: pos.x,
+            y: pos.y,
+            width: size.width,
+            height: size.height,
+        }
     }
 
     fn hide(&self) {
@@ -163,8 +173,7 @@ impl MainWindowHost {
 
     /// 托盤左鍵：視窗在最前面就隱藏，否則顯示並移到最前面
     pub fn toggle(self: &Rc<Self>) {
-        let was_front = self.focused.get()
-            || self.focus_lost_at.get().is_some_and(|t| t.elapsed() < FOCUS_GRACE);
+        let was_front = self.focused.get() || self.focus_lost_at.get().is_some_and(|t| t.elapsed() < FOCUS_GRACE);
         if self.window.window().is_visible() && was_front {
             self.hide();
         } else {

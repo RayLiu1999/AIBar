@@ -6,8 +6,7 @@
 //! 因此判斷是否啟用時要一併檢查，從 AIBar 開啟時也要清掉這筆停用狀態。
 
 use windows::Win32::System::Registry::{
-    HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_BINARY, RRF_RT_REG_SZ, RegDeleteKeyValueW, RegGetValueW,
-    RegSetKeyValueW,
+    HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_BINARY, RRF_RT_REG_SZ, RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW,
 };
 use windows::core::w;
 
@@ -20,7 +19,15 @@ const VALUE_NAME: windows::core::PCWSTR = w!("AIBar");
 pub fn is_enabled() -> bool {
     let mut size = 0u32;
     let registered = unsafe {
-        RegGetValueW(HKEY_CURRENT_USER, RUN_KEY, VALUE_NAME, RRF_RT_REG_SZ, None, None, Some(&mut size))
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            RUN_KEY,
+            VALUE_NAME,
+            RRF_RT_REG_SZ,
+            None,
+            None,
+            Some(&mut size),
+        )
     }
     .is_ok();
     registered && !disabled_by_user()

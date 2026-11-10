@@ -56,15 +56,17 @@ impl UsageProvider for CommandCode {
 
     fn fetch(&self) -> Result<Snapshot, FetchFailure> {
         let auth = read_json_file(&auth_path().ok_or(FetchFailure::NotLoggedIn)?)?;
-        let key = auth["apiKey"].as_str().filter(|k| !k.is_empty()).ok_or(FetchFailure::NotLoggedIn)?;
+        let key = auth["apiKey"]
+            .as_str()
+            .filter(|k| !k.is_empty())
+            .ok_or(FetchFailure::NotLoggedIn)?;
         let user = auth["userId"].as_str().unwrap_or_default();
         let bearer = format!("Bearer {key}");
         let headers = [("Authorization", bearer.as_str())];
 
         let credits = get_json(self.id(), &format!("{BASE}/alpha/billing/credits"), &headers)?;
         // 訂閱資訊拿不到時仍可顯示 5 小時與每週視窗
-        let subscription =
-            get_json(self.id(), &format!("{BASE}/alpha/billing/subscriptions"), &headers).ok();
+        let subscription = get_json(self.id(), &format!("{BASE}/alpha/billing/subscriptions"), &headers).ok();
 
         let parsed = parse(&credits, subscription.as_ref()).ok_or(FetchFailure::BadResponse)?;
         Ok(Snapshot {
@@ -86,7 +88,10 @@ struct Parsed {
 
 fn plan_info(plan_id: &str) -> Option<(&'static str, f64)> {
     let id = plan_id.to_ascii_lowercase().replace('_', "-");
-    PLANS.iter().find(|(prefix, _, _)| id.starts_with(prefix)).map(|(_, name, credits)| (*name, *credits))
+    PLANS
+        .iter()
+        .find(|(prefix, _, _)| id.starts_with(prefix))
+        .map(|(_, name, credits)| (*name, *credits))
 }
 
 fn parse_time(v: &Value) -> Option<SystemTime> {
@@ -98,7 +103,10 @@ fn parse_time(v: &Value) -> Option<SystemTime> {
 fn window(v: &Value, name: &str, secs: u64) -> Option<UsageWindow> {
     let cap = v["cap"].as_f64().filter(|c| *c > 0.0)?;
     let used = v["used"].as_f64().unwrap_or(0.0);
-    let resets_at = v["resetAt"].as_u64().filter(|ms| *ms > 0).map(|ms| UNIX_EPOCH + Duration::from_millis(ms));
+    let resets_at = v["resetAt"]
+        .as_u64()
+        .filter(|ms| *ms > 0)
+        .map(|ms| UNIX_EPOCH + Duration::from_millis(ms));
     Some(UsageWindow {
         name: name.into(),
         used_percent: (used / cap * 100.0).clamp(0.0, 100.0),
@@ -121,13 +129,16 @@ fn parse(credits: &Value, subscription: Option<&Value>) -> Option<Parsed> {
     // 每月額度：方案額度（訂閱有效時）與剩餘量取大者，再加上購買與贈送的額度
     let c = &credits["credits"];
     let monthly_left = c["monthlyCredits"].as_f64().unwrap_or(0.0).max(0.0);
-    let extra = c["purchasedCredits"].as_f64().unwrap_or(0.0).max(0.0)
-        + c["freeCredits"].as_f64().unwrap_or(0.0).max(0.0);
+    let extra =
+        c["purchasedCredits"].as_f64().unwrap_or(0.0).max(0.0) + c["freeCredits"].as_f64().unwrap_or(0.0).max(0.0);
     let money = match plan.filter(|_| active) {
         Some((_, plan_credits)) => {
             let total = plan_credits.max(monthly_left) + extra;
             let used = total - (monthly_left + extra);
-            Some(Credits { used: used.max(0.0), limit: total })
+            Some(Credits {
+                used: used.max(0.0),
+                limit: total,
+            })
         }
         None => None,
     };
@@ -140,14 +151,21 @@ fn parse(credits: &Value, subscription: Option<&Value>) -> Option<Parsed> {
             name: "每月".into(),
             used_percent: (m.used / m.limit * 100.0).clamp(0.0, 100.0),
             resets_at: end,
-            window_secs: start.zip(end).and_then(|(s, e)| e.duration_since(s).ok()).map(|d| d.as_secs()),
+            window_secs: start
+                .zip(end)
+                .and_then(|(s, e)| e.duration_since(s).ok())
+                .map(|d| d.as_secs()),
         });
     }
 
     if windows.is_empty() && money.is_none() {
         return None;
     }
-    Some(Parsed { plan: plan.map(|(name, _)| name.to_string()), windows, credits: money })
+    Some(Parsed {
+        plan: plan.map(|(name, _)| name.to_string()),
+        windows,
+        credits: money,
+    })
 }
 
 #[cfg(test)]

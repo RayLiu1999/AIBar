@@ -13,9 +13,7 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde_json::Value;
 
-use super::{
-    UsageProvider, account_hash, get_json, home_dir, read_json_file, window_name_from_seconds,
-};
+use super::{UsageProvider, account_hash, get_json, home_dir, read_json_file, window_name_from_seconds};
 use crate::model::{FetchFailure, ResetBank, Snapshot, UsageWindow};
 
 const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
@@ -176,7 +174,11 @@ fn parse_usage(v: &Value) -> Option<Vec<UsageWindow>> {
                 .as_str()
                 .or_else(|| item["metered_feature"].as_str())
                 .unwrap_or("其他");
-            let rl = if item["rate_limit"].is_object() { &item["rate_limit"] } else { item };
+            let rl = if item["rate_limit"].is_object() {
+                &item["rate_limit"]
+            } else {
+                item
+            };
             windows.extend(parse_rate_limit(rl, Some(label)));
         }
     }
@@ -245,7 +247,10 @@ mod tests {
     fn 保留重置退回次數() {
         let v = json!({ "rate_limit_reset_credits": { "applicable_available_count": 0, "available_count": 2 } });
         assert_eq!(fallback_resets(&v, Some(0)).unwrap().expires, [None, None]);
-        assert_eq!(fallback_resets(&json!({ "rate_limit_reset_credits": null }), None), None);
+        assert_eq!(
+            fallback_resets(&json!({ "rate_limit_reset_credits": null }), None),
+            None
+        );
     }
 
     #[test]

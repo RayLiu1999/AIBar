@@ -73,6 +73,7 @@ fn main() {
             .set("ProductName", "AIBar")
             .set("CompanyName", "Ray Liu")
             .set("LegalCopyright", "© 2026 Ray Liu");
-        res.compile().expect("無法嵌入 Windows 資源（需要 Windows SDK 的 rc.exe）");
+        res.compile()
+            .expect("無法嵌入 Windows 資源（需要 Windows SDK 的 rc.exe）");
     }
 }

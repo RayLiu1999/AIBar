@@ -49,7 +49,10 @@ impl Default for Config {
         Self {
             providers: KNOWN_PROVIDERS
                 .iter()
-                .map(|id| ProviderEntry { id: id.to_string(), enabled: false })
+                .map(|id| ProviderEntry {
+                    id: id.to_string(),
+                    enabled: false,
+                })
                 .collect(),
             display: Display::Remaining,
             selected_tab: "overview".into(),
@@ -70,7 +73,10 @@ impl Config {
         });
         for id in KNOWN_PROVIDERS {
             if !self.providers.iter().any(|p| p.id == id) {
-                self.providers.push(ProviderEntry { id: id.into(), enabled: detected.contains(&id) });
+                self.providers.push(ProviderEntry {
+                    id: id.into(),
+                    enabled: detected.contains(&id),
+                });
             }
         }
     }
@@ -92,7 +98,9 @@ impl Config {
 
     /// 把 Provider 往前（負）或往後（正）移動一格
     pub fn move_provider(&mut self, id: &str, delta: i32) {
-        let Some(i) = self.providers.iter().position(|p| p.id == id) else { return };
+        let Some(i) = self.providers.iter().position(|p| p.id == id) else {
+            return;
+        };
         let j = i as i64 + delta as i64;
         if j >= 0 && (j as usize) < self.providers.len() {
             self.providers.swap(i, j as usize);
@@ -197,7 +205,10 @@ mod tests {
 
     #[test]
     fn 序列化格式() {
-        let cfg = Config { display: Display::Used, ..Config::default() };
+        let cfg = Config {
+            display: Display::Used,
+            ..Config::default()
+        };
         let text = serde_json::to_string(&cfg).unwrap();
         assert!(text.contains(r#""display":"used""#));
         assert_eq!(serde_json::from_str::<Config>(&text).unwrap(), cfg);

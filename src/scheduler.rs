@@ -131,12 +131,7 @@ pub fn spawn(
     Scheduler { tx }
 }
 
-fn run(
-    mut slots: Vec<Slot>,
-    rx: Receiver<Msg>,
-    tx: Sender<Msg>,
-    on_update: impl Fn(Vec<ProviderStatus>),
-) {
+fn run(mut slots: Vec<Slot>, rx: Receiver<Msg>, tx: Sender<Msg>, on_update: impl Fn(Vec<ProviderStatus>)) {
     let publish = |slots: &[Slot]| on_update(slots.iter().map(|s| s.status.clone()).collect());
     publish(&slots);
 
@@ -179,8 +174,7 @@ fn run(
             Ok(Msg::RefreshOnShow) => {
                 let now = SystemTime::now();
                 for slot in slots.iter_mut().filter(|s| s.enabled && !s.status.refreshing) {
-                    let fresh =
-                        slot.snapshot_age(now).is_some_and(|age| age < slot.base_interval / 2);
+                    let fresh = slot.snapshot_age(now).is_some_and(|age| age < slot.base_interval / 2);
                     if !slot.in_backoff(now) && !fresh {
                         start(slot, &tx);
                     }
@@ -207,9 +201,11 @@ fn run(
                 publish(&slots);
                 // 成功時把所有快照寫入檔案
                 if success {
-                    snapshot_store::save(slots.iter().filter_map(|s| {
-                        Some((s.status.provider_id, s.status.snapshot.as_ref()?))
-                    }));
+                    snapshot_store::save(
+                        slots
+                            .iter()
+                            .filter_map(|s| Some((s.status.provider_id, s.status.snapshot.as_ref()?))),
+                    );
                 }
             }
             Err(RecvTimeoutError::Timeout) => {}
@@ -253,7 +249,11 @@ fn finish(slot: &mut Slot, result: Result<Snapshot, FetchFailure>) {
             slot.backoff_until = Some(until);
             slot.next_due = until;
             slot.status.last_failure = Some(FetchFailure::RateLimited { retry_at: until });
-            log!("[{}] 限流，退避 {} 分鐘", slot.status.provider_id, slot.interval.as_secs() / 60);
+            log!(
+                "[{}] 限流，退避 {} 分鐘",
+                slot.status.provider_id,
+                slot.interval.as_secs() / 60
+            );
         }
         Err(failure) => {
             slot.status.last_failure = Some(failure);

@@ -92,7 +92,11 @@ fn is_reset(w: &UsageWindow, now: SystemTime) -> bool {
 
 /// 已使用百分比；已重置的額度視窗視為 0%
 pub fn used_percent(w: &UsageWindow, now: SystemTime) -> f64 {
-    if is_reset(w, now) { 0.0 } else { w.used_percent.clamp(0.0, 100.0) }
+    if is_reset(w, now) {
+        0.0
+    } else {
+        w.used_percent.clamp(0.0, 100.0)
+    }
 }
 
 /// 剩餘百分比；已重置的額度視窗視為 100%
@@ -112,7 +116,8 @@ pub fn level_of(remaining: f64) -> UsageLevel {
 
 /// 舊快照：取得時間已超過該 Provider 的 3 個背景刷新間隔
 pub fn is_stale(s: &Snapshot, interval: Duration, now: SystemTime) -> bool {
-    now.duration_since(s.fetched_at).is_ok_and(|d| d > interval * STALE_CYCLES)
+    now.duration_since(s.fetched_at)
+        .is_ok_and(|d| d > interval * STALE_CYCLES)
 }
 
 /// 刷新間隔的文字：「每 10 分鐘」
@@ -158,7 +163,11 @@ pub fn pace(w: &UsageWindow, now: SystemTime) -> Option<Pace> {
     } else {
         None
     };
-    Some(Pace { expected_used, diff: expected_used - used, runout_at })
+    Some(Pace {
+        expected_used,
+        diff: expected_used - used,
+        runout_at,
+    })
 }
 
 /// 進度說明，例如「比預期少用 32% · 可撐到重置」
@@ -247,9 +256,7 @@ pub fn failure_text(f: &FetchFailure, provider_id: &str) -> String {
     let cli = provider_meta(provider_id).cli;
     match (f, provider_id) {
         (FetchFailure::NotLoggedIn, "openrouter") => "尚未設定 API key，請到設定 → Provider 輸入".into(),
-        (FetchFailure::TokenExpired, "openrouter") => {
-            "API key 無效或已撤銷，請到設定 → Provider 重新輸入".into()
-        }
+        (FetchFailure::TokenExpired, "openrouter") => "API key 無效或已撤銷，請到設定 → Provider 重新輸入".into(),
         (FetchFailure::NotLoggedIn, "antigravity") => "找不到 Antigravity，請先安裝並登入".into(),
         _ => failure_text_generic(f, cli),
     }
@@ -395,7 +402,10 @@ pub fn card(s: &ProviderStatus, mode: DisplayMode, now: SystemTime) -> CardData 
         plan: snap.and_then(|sn| sn.plan.as_deref()).unwrap_or_default().into(),
         rows: ModelRc::new(VecModel::from(rows)),
         has_snapshot: snap.is_some(),
-        updated_text: snap.map(|sn| updated_text(sn.fetched_at, now)).unwrap_or_default().into(),
+        updated_text: snap
+            .map(|sn| updated_text(sn.fetched_at, now))
+            .unwrap_or_default()
+            .into(),
         stale: snap.is_some_and(|sn| is_stale(sn, s.refresh_interval, now)),
         failure: s
             .last_failure
@@ -465,11 +475,7 @@ pub struct TrayView {
 }
 
 /// 托盤圖示內容。`focus` 為焦點 Provider，`enabled` 為所有啟用的 Provider（依顯示順序）。
-pub fn tray_view(
-    focus: Option<&ProviderStatus>,
-    enabled: &[&ProviderStatus],
-    now: SystemTime,
-) -> TrayView {
+pub fn tray_view(focus: Option<&ProviderStatus>, enabled: &[&ProviderStatus], now: SystemTime) -> TrayView {
     let Some(focus) = focus else {
         return TrayView {
             text: "–".into(),
@@ -481,14 +487,21 @@ pub fn tray_view(
         };
     };
     let meta = provider_meta(focus.provider_id);
-    let warn = focus.last_failure.as_ref().is_some_and(|f| !matches!(f, FetchFailure::NotRunning));
+    let warn = focus
+        .last_failure
+        .as_ref()
+        .is_some_and(|f| !matches!(f, FetchFailure::NotRunning));
     let snap = focus.snapshot.as_ref();
     let top = snap.and_then(|s| tightest(s, now));
     let stale = snap.is_none_or(|s| is_stale(s, focus.refresh_interval, now));
 
     let (text, fill) = match top {
         Some((_, r)) => (
-            if r >= 99.5 { "滿".to_string() } else { format!("{r:.0}") },
+            if r >= 99.5 {
+                "滿".to_string()
+            } else {
+                format!("{r:.0}")
+            },
             match level_of(r) {
                 UsageLevel::Critical => TrayFill::Critical,
                 UsageLevel::Low => TrayFill::Low,
@@ -590,8 +603,17 @@ mod tests {
         assert!(failure_text(&FetchFailure::NotLoggedIn, "openrouter").contains("API key"));
         assert!(failure_text(&FetchFailure::TokenExpired, "codex").contains("codex"));
         assert!(failure_text(&FetchFailure::NotRunning, "antigravity").contains("未執行"));
-        assert_eq!(credits_text(&Credits { used: 4.333, limit: 10.0 }), "本期已用 $4.33 / $10.00");
-        assert_eq!(credits_text(&Credits { used: 3.2, limit: 0.0 }), "本月已用 $3.20（無上限）");
+        assert_eq!(
+            credits_text(&Credits {
+                used: 4.333,
+                limit: 10.0
+            }),
+            "本期已用 $4.33 / $10.00"
+        );
+        assert_eq!(
+            credits_text(&Credits { used: 3.2, limit: 0.0 }),
+            "本月已用 $3.20（無上限）"
+        );
     }
 
     #[test]
@@ -603,7 +625,10 @@ mod tests {
         // 只有次數、沒有到期時間
         assert_eq!(resets_text(&bank(vec![None, None], Some(0)), now), "已存 2 次重置");
         assert_eq!(resets_text(&bank(vec![None, None], Some(2)), now), "可套用 2 次重置");
-        assert_eq!(resets_text(&bank(vec![None, None], Some(1)), now), "可套用 1 次重置（共 2 次）");
+        assert_eq!(
+            resets_text(&bank(vec![None, None], Some(1)), now),
+            "可套用 1 次重置（共 2 次）"
+        );
 
         // 有到期時間：摘要寫最快到期的那一次
         let b = bank(vec![in_days(20), in_days(10)], None);
@@ -690,7 +715,11 @@ mod tests {
         let now = SystemTime::now();
         let s = status(
             "claude",
-            Some(snap(vec![win("5 小時", 28.0, Some(2 * HOUR as i64), Some(5 * HOUR), now)], 60, now)),
+            Some(snap(
+                vec![win("5 小時", 28.0, Some(2 * HOUR as i64), Some(5 * HOUR), now)],
+                60,
+                now,
+            )),
             None,
         );
         let c = card(&s, DisplayMode::Remaining, now);
@@ -707,8 +736,16 @@ mod tests {
     #[test]
     fn 總覽標題取剩最少() {
         let now = SystemTime::now();
-        let a = status("claude", Some(snap(vec![win("每週", 33.0, None, None, now)], 60, now)), None);
-        let b = status("codex", Some(snap(vec![win("每週", 41.0, None, None, now)], 60, now)), None);
+        let a = status(
+            "claude",
+            Some(snap(vec![win("每週", 33.0, None, None, now)], 60, now)),
+            None,
+        );
+        let b = status(
+            "codex",
+            Some(snap(vec![win("每週", 41.0, None, None, now)], 60, now)),
+            None,
+        );
         assert_eq!(overview_headline(&[&a, &b], now), "最先用完：Codex 每週，剩 59%");
     }
 
@@ -717,7 +754,14 @@ mod tests {
         let now = SystemTime::now();
         let a = status(
             "codex",
-            Some(snap(vec![win("5 小時", 7.0, Some(3600), None, now), win("每週", 41.0, None, None, now)], 60, now)),
+            Some(snap(
+                vec![
+                    win("5 小時", 7.0, Some(3600), None, now),
+                    win("每週", 41.0, None, None, now),
+                ],
+                60,
+                now,
+            )),
             None,
         );
         let t = tray_view(Some(&a), &[&a], now);
@@ -731,9 +775,17 @@ mod tests {
     #[test]
     fn 托盤低量轉色與滿() {
         let now = SystemTime::now();
-        let low = status("claude", Some(snap(vec![win("w", 80.0, None, None, now)], 0, now)), None);
+        let low = status(
+            "claude",
+            Some(snap(vec![win("w", 80.0, None, None, now)], 0, now)),
+            None,
+        );
         assert_eq!(tray_view(Some(&low), &[&low], now).fill, TrayFill::Low);
-        let crit = status("claude", Some(snap(vec![win("w", 95.0, None, None, now)], 0, now)), None);
+        let crit = status(
+            "claude",
+            Some(snap(vec![win("w", 95.0, None, None, now)], 0, now)),
+            None,
+        );
         assert_eq!(tray_view(Some(&crit), &[&crit], now).fill, TrayFill::Critical);
         let full = status("claude", Some(snap(vec![win("w", 0.0, None, None, now)], 0, now)), None);
         assert_eq!(tray_view(Some(&full), &[&full], now).text, "滿");

@@ -50,7 +50,9 @@ pub fn find() -> Option<PathBuf> {
         .filter(|p| p.is_file());
     default.or_else(|| {
         let paths = std::env::var_os("PATH")?;
-        std::env::split_paths(&paths).map(|d| d.join("agy.exe")).find(|p| p.is_file())
+        std::env::split_paths(&paths)
+            .map(|d| d.join("agy.exe"))
+            .find(|p| p.is_file())
     })
 }
 
@@ -61,7 +63,11 @@ pub fn fetch(exe: &Path) -> Result<Snapshot, FetchFailure> {
         log!("[antigravity] agy {version:?} 太舊，沒有非互動的用量報告");
         return Err(FetchFailure::NotRunning);
     }
-    let out = run(exe, &["-p", "/usage", "--output-format", "json", "--print-timeout", "90s"], REPORT_TIMEOUT)?;
+    let out = run(
+        exe,
+        &["-p", "/usage", "--output-format", "json", "--print-timeout", "90s"],
+        REPORT_TIMEOUT,
+    )?;
     let report: Value = serde_json::from_slice(&out).map_err(|_| FetchFailure::BadResponse)?;
     if PROBE.load(std::sync::atomic::Ordering::Relaxed) {
         eprintln!("[antigravity] agy 用量報告結構：");
@@ -242,6 +248,9 @@ mod tests {
 
         let failed = json!({ "status": "ERROR", "command": { "name": "usage", "data": {} } });
         assert!(matches!(parse_report(&failed), Err(FetchFailure::NotLoggedIn)));
-        assert!(matches!(parse_report(&json!({ "status": "SUCCESS" })), Err(FetchFailure::BadResponse)));
+        assert!(matches!(
+            parse_report(&json!({ "status": "SUCCESS" })),
+            Err(FetchFailure::BadResponse)
+        ));
     }
 }

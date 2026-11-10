@@ -156,7 +156,10 @@ fn claude_code_version() -> String {
 /// 只接受「數字.數字.數字」，避免奇怪的字串進到 header
 fn valid_version(v: &str) -> bool {
     let parts: Vec<&str> = v.split('.').collect();
-    parts.len() == 3 && parts.iter().all(|p| !p.is_empty() && p.len() <= 6 && p.chars().all(|c| c.is_ascii_digit()))
+    parts.len() == 3
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.len() <= 6 && p.chars().all(|c| c.is_ascii_digit()))
 }
 
 /// 方案名稱：`max` +`default_claude_max_5x` →「Max 5x」；`pro` →「Pro」
@@ -198,8 +201,7 @@ fn parse_usage(v: &Value) -> Option<Vec<UsageWindow>> {
         }
     }
 
-    let legacy: Vec<UsageWindow> =
-        [("five_hour", "5 小時", FIVE_HOURS), ("seven_day", "每週", WEEK)]
+    let legacy: Vec<UsageWindow> = [("five_hour", "5 小時", FIVE_HOURS), ("seven_day", "每週", WEEK)]
         .into_iter()
         .filter_map(|(key, name, secs)| {
             let w = &v[key];
@@ -248,9 +250,18 @@ mod tests {
 
     #[test]
     fn 方案名稱() {
-        assert_eq!(plan_name(Some("max"), Some("default_claude_max_5x")).as_deref(), Some("Max 5x"));
-        assert_eq!(plan_name(Some("max"), Some("default_claude_max_20x")).as_deref(), Some("Max 20x"));
-        assert_eq!(plan_name(Some("pro"), Some("default_claude_ai")).as_deref(), Some("Pro"));
+        assert_eq!(
+            plan_name(Some("max"), Some("default_claude_max_5x")).as_deref(),
+            Some("Max 5x")
+        );
+        assert_eq!(
+            plan_name(Some("max"), Some("default_claude_max_20x")).as_deref(),
+            Some("Max 20x")
+        );
+        assert_eq!(
+            plan_name(Some("pro"), Some("default_claude_ai")).as_deref(),
+            Some("Pro")
+        );
         assert_eq!(plan_name(None, None), None);
     }
 
@@ -337,7 +348,13 @@ mod tests {
         let surface = json!({ "eligible": false, "ineligible_reason": "surface", "grants": [] });
         assert!(parse_resets(&surface, now).is_none());
 
-        assert!(parse_resets(&json!({ "eligible": false, "grants": [{ "resets_left": 1, "paused": false }] }), now).is_none());
+        assert!(
+            parse_resets(
+                &json!({ "eligible": false, "grants": [{ "resets_left": 1, "paused": false }] }),
+                now
+            )
+            .is_none()
+        );
         assert!(parse_resets(&json!(null), now).is_none());
         assert!(parse_resets(&json!({ "eligible": true, "grants": [] }), now).is_none());
     }

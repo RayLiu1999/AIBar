@@ -39,8 +39,7 @@ impl UsageProvider for OpenRouter {
         let headers = [("Authorization", bearer.as_str())];
         let key_info = get_json(ID, KEY_URL, &headers)?;
         let credits = get_json(ID, CREDITS_URL, &headers).ok();
-        let parsed =
-            parse(&key_info, credits.as_ref(), SystemTime::now()).ok_or(FetchFailure::BadResponse)?;
+        let parsed = parse(&key_info, credits.as_ref(), SystemTime::now()).ok_or(FetchFailure::BadResponse)?;
         Ok(Snapshot {
             plan: parsed.plan,
             account_hash: account_hash(&key),
@@ -66,9 +65,8 @@ fn to_system(dt: chrono::DateTime<Utc>) -> SystemTime {
 fn next_reset(period: &str, now: SystemTime) -> Option<(SystemTime, u64)> {
     let now: chrono::DateTime<Utc> = now.into();
     let today = now.date_naive();
-    let midnight = |d: NaiveDate| -> Option<chrono::DateTime<Utc>> {
-        Some(Utc.from_utc_datetime(&d.and_hms_opt(0, 0, 0)?))
-    };
+    let midnight =
+        |d: NaiveDate| -> Option<chrono::DateTime<Utc>> { Some(Utc.from_utc_datetime(&d.and_hms_opt(0, 0, 0)?)) };
     match period {
         "daily" => Some((to_system(midnight(today.succ_opt()?)?), 86400)),
         "weekly" => {
@@ -77,7 +75,11 @@ fn next_reset(period: &str, now: SystemTime) -> Option<(SystemTime, u64)> {
             Some((to_system(midnight(next)?), 7 * 86400))
         }
         "monthly" => {
-            let (y, m) = if today.month() == 12 { (today.year() + 1, 1) } else { (today.year(), today.month() + 1) };
+            let (y, m) = if today.month() == 12 {
+                (today.year() + 1, 1)
+            } else {
+                (today.year(), today.month() + 1)
+            };
             let start = NaiveDate::from_ymd_opt(today.year(), today.month(), 1)?;
             let next = NaiveDate::from_ymd_opt(y, m, 1)?;
             Some((to_system(midnight(next)?), (next - start).num_seconds() as u64))
@@ -133,7 +135,11 @@ fn parse(key: &Value, credits: Option<&Value>, now: SystemTime) -> Option<Parsed
         Some(false) => Some("付費".to_string()),
         None => None,
     };
-    Some(Parsed { plan, windows, credits: money })
+    Some(Parsed {
+        plan,
+        windows,
+        credits: money,
+    })
 }
 
 #[cfg(test)]
@@ -159,14 +165,26 @@ mod tests {
         assert_eq!(p.windows[0].resets_at, Some(at(2026, 12, 1, 0)));
         assert_eq!(p.windows[0].window_secs, Some(30 * 86400));
         assert_eq!(p.windows[1].name, "儲值餘額");
-        assert_eq!(p.credits, Some(Credits { used: 20.0, limit: 50.0 }));
+        assert_eq!(
+            p.credits,
+            Some(Credits {
+                used: 20.0,
+                limit: 50.0
+            })
+        );
     }
 
     #[test]
     fn 週與日的重置() {
         // 2026-11-10 是週二 → 下週一 11/16
-        assert_eq!(next_reset("weekly", at(2026, 11, 10, 3)).unwrap().0, at(2026, 11, 16, 0));
-        assert_eq!(next_reset("daily", at(2026, 11, 10, 23)).unwrap().0, at(2026, 11, 11, 0));
+        assert_eq!(
+            next_reset("weekly", at(2026, 11, 10, 3)).unwrap().0,
+            at(2026, 11, 16, 0)
+        );
+        assert_eq!(
+            next_reset("daily", at(2026, 11, 10, 23)).unwrap().0,
+            at(2026, 11, 11, 0)
+        );
         assert_eq!(next_reset("monthly", at(2026, 12, 5, 0)).unwrap().0, at(2027, 1, 1, 0));
         assert!(next_reset("", at(2026, 1, 1, 0)).is_none());
     }

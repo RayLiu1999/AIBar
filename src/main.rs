@@ -68,8 +68,7 @@ impl App {
     /// 已啟用且已實作的 Provider id，依顯示順序
     fn enabled_ids(&self) -> Vec<&'static str> {
         let cfg = self.config.borrow();
-        let mut ids: Vec<&'static str> =
-            self.available.iter().copied().filter(|id| cfg.is_enabled(id)).collect();
+        let mut ids: Vec<&'static str> = self.available.iter().copied().filter(|id| cfg.is_enabled(id)).collect();
         ids.sort_by_key(|id| cfg.order_of(id));
         ids
     }
@@ -88,8 +87,7 @@ impl App {
         }
         let ids = self.enabled_ids();
         let statuses = self.statuses.borrow();
-        let enabled: Vec<&ProviderStatus> =
-            statuses.iter().filter(|s| ids.contains(&s.provider_id)).collect();
+        let enabled: Vec<&ProviderStatus> = statuses.iter().filter(|s| ids.contains(&s.provider_id)).collect();
         for alert in self.notifier.borrow_mut().check(&enabled, SystemTime::now()) {
             log!("[通知] {}", alert.title);
             notify::show(&alert.title, &alert.body);
@@ -124,7 +122,8 @@ impl App {
         let ui = self.window.ui();
         ui.set_headline(view::overview_headline(&enabled, now).into());
         ui.set_selected_tab(tab_index.unwrap_or(0) as i32);
-        self.window.set_cards(enabled.iter().map(|s| view::card(s, display, now)).collect());
+        self.window
+            .set_cards(enabled.iter().map(|s| view::card(s, display, now)).collect());
     }
 
     /// 頁籤切換：0 為總覽，n 為第 n 個啟用的 Provider
@@ -212,8 +211,11 @@ impl App {
                     });
                     w.on_display_changed(|index| {
                         with_app(move |app| {
-                            app.config.borrow_mut().display =
-                                if index == 1 { DisplayMode::Used } else { DisplayMode::Remaining };
+                            app.config.borrow_mut().display = if index == 1 {
+                                DisplayMode::Used
+                            } else {
+                                DisplayMode::Remaining
+                            };
                             app.save_config();
                             app.render();
                         })();
@@ -296,8 +298,15 @@ fn with_app(f: impl Fn(Rc<App>) + 'static) -> impl Fn() + 'static {
 /// `--probe [id]`：對每個（或指定的）Provider 抓取一次並印出結果
 fn probe(only: Option<&str>) {
     providers::PROBE.store(true, Ordering::Relaxed);
-    for p in providers::all().into_iter().filter(|p| only.is_none_or(|id| p.id() == id)) {
-        eprintln!("== {}（憑證檔{}）", p.id(), if p.credentials_present() { "存在" } else { "不存在" });
+    for p in providers::all()
+        .into_iter()
+        .filter(|p| only.is_none_or(|id| p.id() == id))
+    {
+        eprintln!(
+            "== {}（憑證檔{}）",
+            p.id(),
+            if p.credentials_present() { "存在" } else { "不存在" }
+        );
         match p.fetch() {
             Ok(s) => {
                 eprintln!("方案：{}", s.plan.as_deref().unwrap_or("（無）"));
@@ -362,11 +371,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 讀取設定；首次啟動時憑證檔存在的 Provider 預設啟用
     let all = providers::all();
     let available: Vec<&'static str> = all.iter().map(|p| p.id()).collect();
-    let detected: Vec<&str> =
-        all.iter().filter(|p| p.credentials_present()).map(|p| p.id()).collect();
+    let detected: Vec<&str> = all.iter().filter(|p| p.credentials_present()).map(|p| p.id()).collect();
     let cfg = config::load(&detected);
-    let enabled: Vec<&'static str> =
-        available.iter().copied().filter(|id| cfg.is_enabled(id)).collect();
+    let enabled: Vec<&'static str> = available.iter().copied().filter(|id| cfg.is_enabled(id)).collect();
 
     // 上次存下的快照；帳號已更換的捨棄
     let snapshots = snapshot_store::keep_matching(snapshot_store::load(), |id| {
@@ -416,7 +423,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.tray.on_left_clicked(with_app(|app| app.window.toggle()));
     app.tray.on_refresh_now(with_app(|app| app.scheduler.refresh_now()));
     app.tray.on_open_settings(with_app(|app| app.open_settings(None)));
-    app.tray.on_show_about(with_app(|app| app.open_settings(Some(SETTINGS_PAGE_ABOUT))));
+    app.tray
+        .on_show_about(with_app(|app| app.open_settings(Some(SETTINGS_PAGE_ABOUT))));
     app.tray.on_quit(|| {
         let _ = slint::quit_event_loop();
     });

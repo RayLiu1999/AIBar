@@ -189,9 +189,14 @@ fn leaf(v: &Value) -> String {
     match v {
         Value::String(s) => {
             let code_like = s.len() <= 40
-                && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+                && s.chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
             let iso_time = s.len() <= 40 && chrono::DateTime::parse_from_rfc3339(s).is_ok();
-            if code_like || iso_time { format!("{s:?}") } else { format!("<字串 {} 字>", s.len()) }
+            if code_like || iso_time {
+                format!("{s:?}")
+            } else {
+                format!("<字串 {} 字>", s.len())
+            }
         }
         other => other.to_string(),
     }

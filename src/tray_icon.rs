@@ -6,11 +6,10 @@
 use slint::{Image, Rgba8Pixel, SharedPixelBuffer};
 use windows::Win32::Foundation::{COLORREF, RECT};
 use windows::Win32::Graphics::Gdi::{
-    ANTIALIASED_QUALITY, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CLIP_DEFAULT_PRECIS,
-    CreateCompatibleDC, CreateDIBSection, CreateFontW, DEFAULT_CHARSET, DIB_RGB_COLORS,
-    DT_CENTER, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER, DeleteDC, DeleteObject, DrawTextW,
-    FF_SWISS, FW_BOLD, GdiFlush, OUT_DEFAULT_PRECIS, SelectObject, SetBkMode, SetTextColor,
-    TRANSPARENT, VARIABLE_PITCH,
+    ANTIALIASED_QUALITY, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CLIP_DEFAULT_PRECIS, CreateCompatibleDC,
+    CreateDIBSection, CreateFontW, DEFAULT_CHARSET, DIB_RGB_COLORS, DT_CENTER, DT_NOPREFIX, DT_SINGLELINE, DT_VCENTER,
+    DeleteDC, DeleteObject, DrawTextW, FF_SWISS, FW_BOLD, GdiFlush, OUT_DEFAULT_PRECIS, SelectObject, SetBkMode,
+    SetTextColor, TRANSPARENT, VARIABLE_PITCH,
 };
 use windows::Win32::UI::HiDpi::{GetDpiForSystem, GetSystemMetricsForDpi};
 use windows::Win32::UI::WindowsAndMessaging::SM_CXSMICON;
@@ -88,14 +87,29 @@ fn text_mask(text: &str, size: u32, em_px: i32, face: &str) -> Option<Vec<u8>> {
         let old_font = SelectObject(hdc, font.into());
         SetTextColor(hdc, COLORREF(0x00FF_FFFF));
         SetBkMode(hdc, TRANSPARENT);
-        let mut rc = RECT { left: 0, top: 0, right: n, bottom: n };
+        let mut rc = RECT {
+            left: 0,
+            top: 0,
+            right: n,
+            bottom: n,
+        };
         let mut wide: Vec<u16> = text.encode_utf16().collect();
-        DrawTextW(hdc, &mut wide, &mut rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        DrawTextW(
+            hdc,
+            &mut wide,
+            &mut rc,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+        );
         let _ = GdiFlush();
 
         // DIB 為 BGRA；白字的任一通道即覆蓋率
         let raw = std::slice::from_raw_parts(bits as *const u8, (size * size * 4) as usize);
-        let mask = raw.as_chunks::<4>().0.iter().map(|p| p[0].max(p[1]).max(p[2])).collect();
+        let mask = raw
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|p| p[0].max(p[1]).max(p[2]))
+            .collect();
 
         SelectObject(hdc, old_font);
         SelectObject(hdc, old_bmp);
@@ -129,7 +143,9 @@ pub fn make_tray_sized(view: &TrayView, size: u32) -> Image {
     };
 
     // 外框（整塊）→ 內部底色
-    canvas.fill(view.rim.unwrap_or(RIM_GRAY), |x, y| rounded_rect(x, y, 0.0, 0.0, s, s, radius));
+    canvas.fill(view.rim.unwrap_or(RIM_GRAY), |x, y| {
+        rounded_rect(x, y, 0.0, 0.0, s, s, radius)
+    });
     canvas.fill(bg, |x, y| {
         rounded_rect(x, y, rim, rim, s - rim, s - rim, (radius - rim).max(1.0))
     });
@@ -173,7 +189,9 @@ pub fn apply_app_icon(window: &slint::Window) {
     use slint::winit_030::winit::window::Icon;
 
     const SIZE: u32 = 64;
-    let Ok(icon) = Icon::from_rgba(icon_art::app_icon(SIZE).to_rgba(), SIZE, SIZE) else { return };
+    let Ok(icon) = Icon::from_rgba(icon_art::app_icon(SIZE).to_rgba(), SIZE, SIZE) else {
+        return;
+    };
     window.with_winit_window(|w| {
         w.set_window_icon(Some(icon.clone()));
         w.set_taskbar_icon(Some(icon));
@@ -226,7 +244,11 @@ mod tests {
             ("full", view("滿", TrayFill::Normal, false)),
             (
                 "stale_warn",
-                TrayView { rim: None, dim: true, ..view("59", TrayFill::Normal, true) },
+                TrayView {
+                    rim: None,
+                    dim: true,
+                    ..view("59", TrayFill::Normal, true)
+                },
             ),
         ];
         for size in [16u32, 20, 24, 32] {

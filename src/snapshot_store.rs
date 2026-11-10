@@ -101,9 +101,9 @@ impl From<StoredSnapshot> for Snapshot {
                 })
                 .collect(),
             credits: s.credits.map(|(used, limit)| Credits { used, limit }),
-            resets: s.reset_bank.and_then(|r| {
-                ResetBank::new(r.expires.into_iter().map(|t| t.map(from_secs)).collect(), r.usable)
-            }),
+            resets: s
+                .reset_bank
+                .and_then(|r| ResetBank::new(r.expires.into_iter().map(|t| t.map(from_secs)).collect(), r.usable)),
         }
     }
 }
@@ -118,7 +118,10 @@ fn parse(text: &str) -> HashMap<String, Snapshot> {
 fn serialize<'a>(snapshots: impl IntoIterator<Item = (&'a str, &'a Snapshot)>) -> String {
     let file = StoredFile {
         v: VERSION,
-        providers: snapshots.into_iter().map(|(id, s)| (id.to_string(), s.into())).collect(),
+        providers: snapshots
+            .into_iter()
+            .map(|(id, s)| (id.to_string(), s.into()))
+            .collect(),
     };
     serde_json::to_string_pretty(&file).unwrap_or_default()
 }
@@ -170,7 +173,10 @@ mod tests {
                 resets_at: Some(from_secs(1_794_010_000)),
                 window_secs: Some(18000),
             }],
-            credits: Some(Credits { used: 4.33, limit: 10.0 }),
+            credits: Some(Credits {
+                used: 4.33,
+                limit: 10.0,
+            }),
             resets: ResetBank::new(vec![Some(from_secs(1_795_132_800)), None], Some(0)),
         }
     }

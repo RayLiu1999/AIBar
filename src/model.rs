@@ -39,7 +39,11 @@ impl ResetBank {
 
     /// 在 `now` 仍有效的重置（排除已過期的）
     pub fn remaining(&self, now: SystemTime) -> Vec<Option<SystemTime>> {
-        self.expires.iter().copied().filter(|t| t.is_none_or(|t| t > now)).collect()
+        self.expires
+            .iter()
+            .copied()
+            .filter(|t| t.is_none_or(|t| t > now))
+            .collect()
     }
 }
 

@@ -26,7 +26,10 @@ pub struct Canvas {
 
 impl Canvas {
     pub fn new(size: u32) -> Self {
-        Self { size, px: vec![[0.0; 4]; (size * size) as usize] }
+        Self {
+            size,
+            px: vec![[0.0; 4]; (size * size) as usize],
+        }
     }
 
     /// 以覆蓋率 `cov`（0–1）把顏色疊到第 `i` 個像素上（source-over）
@@ -55,7 +58,10 @@ impl Canvas {
     /// 轉成 RGBA 位元組（由上而下）
     pub fn to_rgba(&self) -> Vec<u8> {
         let q = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-        self.px.iter().flat_map(|p| [q(p[0]), q(p[1]), q(p[2]), q(p[3])]).collect()
+        self.px
+            .iter()
+            .flat_map(|p| [q(p[0]), q(p[1]), q(p[2]), q(p[3])])
+            .collect()
     }
 }
 
@@ -85,7 +91,11 @@ pub fn png(canvas: &Canvas) -> Vec<u8> {
         for &b in data {
             crc ^= b as u32;
             for _ in 0..8 {
-                crc = if crc & 1 != 0 { (crc >> 1) ^ 0xEDB8_8320 } else { crc >> 1 };
+                crc = if crc & 1 != 0 {
+                    (crc >> 1) ^ 0xEDB8_8320
+                } else {
+                    crc >> 1
+                };
             }
         }
         !crc

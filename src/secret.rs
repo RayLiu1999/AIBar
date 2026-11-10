@@ -20,7 +20,10 @@ const FILE_NAME: &str = "secrets.bin";
 static LOCK: Mutex<()> = Mutex::new(());
 
 fn blob(data: &[u8]) -> CRYPT_INTEGER_BLOB {
-    CRYPT_INTEGER_BLOB { cbData: data.len() as u32, pbData: data.as_ptr() as *mut u8 }
+    CRYPT_INTEGER_BLOB {
+        cbData: data.len() as u32,
+        pbData: data.as_ptr() as *mut u8,
+    }
 }
 
 /// 把 DPAPI 回傳的緩衝區複製出來並釋放
@@ -34,15 +37,33 @@ fn take(out: CRYPT_INTEGER_BLOB) -> Vec<u8> {
 
 fn protect(plain: &[u8]) -> Option<Vec<u8>> {
     let mut out = CRYPT_INTEGER_BLOB::default();
-    unsafe { CryptProtectData(&blob(plain), None, None, None, None, CRYPTPROTECT_UI_FORBIDDEN, &mut out) }
-        .ok()?;
+    unsafe {
+        CryptProtectData(
+            &blob(plain),
+            None,
+            None,
+            None,
+            None,
+            CRYPTPROTECT_UI_FORBIDDEN,
+            &mut out,
+        )
+    }
+    .ok()?;
     Some(take(out))
 }
 
 fn unprotect(cipher: &[u8]) -> Option<Vec<u8>> {
     let mut out = CRYPT_INTEGER_BLOB::default();
     unsafe {
-        CryptUnprotectData(&blob(cipher), None, None, None, None, CRYPTPROTECT_UI_FORBIDDEN, &mut out)
+        CryptUnprotectData(
+            &blob(cipher),
+            None,
+            None,
+            None,
+            None,
+            CRYPTPROTECT_UI_FORBIDDEN,
+            &mut out,
+        )
     }
     .ok()?;
     Some(take(out))

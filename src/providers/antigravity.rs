@@ -178,7 +178,10 @@ fn window_secs(id: &str) -> Option<u64> {
 
 /// 取第一個存在的欄位（App 的回應用 camelCase，agy CLI 的報告用 snake_case）
 fn field<'a>(v: &'a Value, keys: &[&str]) -> &'a Value {
-    keys.iter().map(|k| &v[*k]).find(|x| !x.is_null()).unwrap_or(&Value::Null)
+    keys.iter()
+        .map(|k| &v[*k])
+        .find(|x| !x.is_null())
+        .unwrap_or(&Value::Null)
 }
 
 /// 額度摘要：App 的 `RetrieveUserQuotaSummary`（`response.groups[]`）或 agy CLI 的
@@ -203,7 +206,9 @@ pub(super) fn parse_summary(v: &Value) -> Option<Vec<UsageWindow>> {
             };
             let id = field(b, &["bucketId", "bucket_id", "id"]).as_str().unwrap_or_default();
             let window = b["window"].as_str().unwrap_or(id);
-            let display = field(b, &["displayName", "display_name", "name"]).as_str().unwrap_or_default();
+            let display = field(b, &["displayName", "display_name", "name"])
+                .as_str()
+                .unwrap_or_default();
             // 通用名稱（「Weekly Limit Remaining」等）改用「組名・5 小時／每週」；
             // 有專屬名稱的（例如某個模型的每週額度）照原名，去掉結尾的「Limit」
             let generic = display.is_empty() || display.contains("Limit Remaining");
@@ -239,7 +244,9 @@ fn parse_status(v: &Value) -> Option<Vec<UsageWindow>> {
         if ["lite", "autocomplete", "image"].iter().any(|k| lower.contains(k)) {
             continue;
         }
-        let Some(frac) = c["quotaInfo"]["remainingFraction"].as_f64() else { continue };
+        let Some(frac) = c["quotaInfo"]["remainingFraction"].as_f64() else {
+            continue;
+        };
         let group = if lower.contains("gemini") {
             "Gemini"
         } else if ["claude", "gpt"].iter().any(|k| lower.contains(k)) {
@@ -305,10 +312,17 @@ fn find_servers() -> Vec<Server> {
     let Ok(snap) = (unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) }) else {
         return found;
     };
-    let mut entry = PROCESSENTRY32W { dwSize: size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+    let mut entry = PROCESSENTRY32W {
+        dwSize: size_of::<PROCESSENTRY32W>() as u32,
+        ..Default::default()
+    };
     let mut ok = unsafe { Process32FirstW(snap, &mut entry) }.is_ok();
     while ok {
-        let len = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
+        let len = entry
+            .szExeFile
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(entry.szExeFile.len());
         let exe = String::from_utf16_lossy(&entry.szExeFile[..len]).to_ascii_lowercase();
         if (exe.starts_with("language_server") || exe.starts_with("language-server"))
             && let Some(server) =
@@ -335,7 +349,13 @@ fn command_line(pid: u32) -> Option<String> {
     let handle: HANDLE = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }.ok()?;
     let mut needed = 0u32;
     let _ = unsafe {
-        NtQueryInformationProcess(handle, PROCESS_COMMAND_LINE_INFORMATION, std::ptr::null_mut(), 0, &mut needed)
+        NtQueryInformationProcess(
+            handle,
+            PROCESS_COMMAND_LINE_INFORMATION,
+            std::ptr::null_mut(),
+            0,
+            &mut needed,
+        )
     };
     let mut result = None;
     if needed as usize >= size_of::<UnicodeString>() {
@@ -368,7 +388,14 @@ fn command_line(pid: u32) -> Option<String> {
 fn listening_ports(pid: u32) -> Vec<u16> {
     let mut size = 0u32;
     let _ = unsafe {
-        GetExtendedTcpTable(None, &mut size, false, AF_INET.0 as u32, TCP_TABLE_OWNER_PID_LISTENER, 0)
+        GetExtendedTcpTable(
+            None,
+            &mut size,
+            false,
+            AF_INET.0 as u32,
+            TCP_TABLE_OWNER_PID_LISTENER,
+            0,
+        )
     };
     if size == 0 {
         return Vec::new();
@@ -389,9 +416,7 @@ fn listening_ports(pid: u32) -> Vec<u16> {
     }
     // MIB_TCPTABLE_OWNER_PID：dwNumEntries 之後緊接著各列
     let count = buf[0] as usize;
-    let rows = unsafe {
-        std::slice::from_raw_parts(buf.as_ptr().add(1) as *const MIB_TCPROW_OWNER_PID, count)
-    };
+    let rows = unsafe { std::slice::from_raw_parts(buf.as_ptr().add(1) as *const MIB_TCPROW_OWNER_PID, count) };
     let mut ports: Vec<u16> = rows
         .iter()
         .filter(|r| r.dwOwningPid == pid)
