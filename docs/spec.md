@@ -111,7 +111,7 @@ Claude、Codex、Command Code 借用 CLI 已登入的憑證，Antigravity 探測
 
 | Provider | 版本 | 認證來源 | 取得方式 | 方案名稱 |
 | --- | --- | --- | --- | --- |
-| Claude | v0 | `%USERPROFILE%\.claude\.credentials.json` 的 `claudeAiOauth.accessToken`（`expiresAt` 為毫秒，壽命約 8 小時） | `GET https://api.anthropic.com/api/oauth/usage`，header：`Authorization: Bearer <token>`、`anthropic-beta: oauth-2025-04-20` | `claudeAiOauth.subscriptionType` + `rateLimitTier`（例：`max` + `default_claude_max_5x` → 「Max 5x」） |
+| Claude | v0 | `%USERPROFILE%\.claude\.credentials.json` 的 `claudeAiOauth.accessToken`（`expiresAt` 為毫秒，壽命約 8 小時） | `GET https://api.anthropic.com/api/oauth/usage?cedar_ember=1`，header：`Authorization: Bearer <token>`、`anthropic-beta: oauth-2025-04-20`、`User-Agent: claude-cli/<版本> (external, cli)` | `claudeAiOauth.subscriptionType` + `rateLimitTier`（例：`max` + `default_claude_max_5x` → 「Max 5x」） |
 | Codex | v0 | `%USERPROFILE%\.codex\auth.json` 的 `tokens.access_token`、`tokens.account_id`（JWT，壽命約 10 天） | `GET https://chatgpt.com/backend-api/wham/usage`，header：`Authorization: Bearer <token>`、`ChatGPT-Account-Id: <account_id>` | 回應的 `plan_type`（例：`plus` → 「Plus」） |
 | Antigravity | v1 | 無（本機探測） | 見下方「Antigravity 探測」 | `GetUserStatus` 的 `userStatus.planStatus.planInfo.planName`（例：「Pro」） |
 | Command Code | v2 | `%USERPROFILE%\.commandcode\auth.json` 的 `apiKey`、`userId` | `GET https://api.commandcode.ai/alpha/billing/credits` 與 `/alpha/billing/subscriptions`，header：`Authorization: Bearer <apiKey>` | 訂閱的 `planId` 對照 CLI 內建表（例：`individual-go-v1` →「Go」，月額度 $10） |
@@ -129,6 +129,11 @@ Claude、Codex、Command Code 借用 CLI 已登入的憑證，Antigravity 探測
 - `rate_limit.primary_window` 與 `rate_limit.secondary_window`：`used_percent`、`limit_window_seconds`、`reset_at`（Unix 秒）。
 - 視窗名稱由 `limit_window_seconds` 推得：18000 →「5 小時」、604800 →「每週」，其他值換算成小時或天數。
 - `additional_rate_limits` 有值時一併顯示。
+- 保留重置的明細另外查 `GET https://chatgpt.com/backend-api/wham/rate-limit-reset-credits`（同樣的 `Authorization`、`ChatGPT-Account-Id`，另加 `OpenAI-Beta: codex-1`、`originator: Codex Desktop`）：`credits` 中 `status` 為 `available` 且 `expires_at`（ISO 8601）未過的每一筆算一次，每筆的到期時間不同。不保存每筆的 `id`（兌換用的識別碼）。
+- 用量回應的 `rate_limit_reset_credits.applicable_available_count` 是此刻可套用的次數（沒撞到上限時通常為 0）。明細端點失敗時，退回用量回應的 `available_count`（只有次數、沒有到期時間）；明細失敗不影響用量本身。
+- Claude 的保留重置（claude.ai「設定 → 用量」的 Reset for free）：查詢加上 `cedar_ember=1`，回應的 `cedar_ember` 區塊才會出現。伺服器依呼叫來源判斷是否提供，因此 User-Agent 採用 Claude Code CLI 的格式 `claude-cli/<版本> (external, cli)`（版本取自 `.claude.json` 的 `lastReleaseNotesSeen`，讀不到時用 `2.1.0`；與 CodexBar 相同做法），否則會得到 `eligible: false`、`ineligible_reason: "surface"`。
+  - 需 `eligible: true`。`grants` 中未暫停（`paused: false`）、已開始（`starts_at`）、未到期（`ends_at`）的每筆依 `resets_left` 計入次數，到期時間為 `ends_at`；`usable_now: true` 的計入可套用次數。格式不符的 grant 略過，不保存 grant 的 `id`。
+  - 伺服器若以 400／403 拒絕 `cedar_ember` 參數，退回不帶參數的查詢一次，用量照常顯示。
 
 **Antigravity 探測**
 
@@ -181,6 +186,7 @@ pub struct Snapshot {
     pub account_hash: String,              // 帳號識別的雜湊，不存原始 id
     pub windows: Vec<UsageWindow>,
     pub credits: Option<Credits>,          // 金額型額度（Command Code、OpenRouter）
+    pub resets: Option<ResetBank>,         // 保留重置：每一次的到期時間（最快的在前）、此刻可套用次數（Codex）
     pub fetched_at: SystemTime,
 }
 
@@ -260,6 +266,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 - **進度刻度**：可推得視窗長度時（Codex 的 `limit_window_seconds`；Claude 的 `session` 5 小時、`weekly_*` 7 天），進度條上以白色刻度標出「依時間比例此刻應剩的量」，第三行寫「比預期少用 N% · 可撐到重置」或「比預期多用 N% · 約 X 後用完」（以目前平均速度推算用完時間，早於重置才顯示）。推不出視窗長度時不顯示刻度與說明。
 - 重置倒數：24 小時內顯示「2 時 13 分後重置」，超過 24 小時顯示「3 天 16 小時後重置」，重置時間已過顯示「已重置」；Provider 頁籤另顯示絕對時間（「今天 01:10」「11/13（五）16:00」）。
 - 金額型 Provider（Command Code、OpenRouter）在卡片標題下顯示「本期已用 $4.33 / $10.00」，Provider 頁籤的資訊列另有「費用」一列。
+- 有保留重置時，卡片標題下顯示「已存 2 次重置・最快 11/30（一）03:41 到期」（可套用時改為「可套用 N 次重置」）；最快到期的在 3 天內到期時以黃色顯示。Provider 頁籤的資訊列另有「重置」一列，逐次列出到期時間與剩餘時間，最後一行寫套用方式（Codex：撞到上限時在 codex 中輸入 `/usage`；Claude：claude.ai 或桌面版「設定 → 用量」的 Reset for free）。AIBar 只顯示，不替使用者套用。
 - 「更新於 N 分鐘前」與重置倒數每 30 秒重新計算。
 - 配色跟隨 Windows 深色／淺色模式。
 
@@ -313,7 +320,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 | 檔案 | 內容 | 說明 |
 | --- | --- | --- |
 | `config.json` | Provider 啟用與排序、顯示方式、最後選的頁籤、視窗位置與大小 | 由設定視窗與主視窗讀寫，使用者不需編輯 |
-| `snapshots.json` | 各 Provider 的快照（含金額型額度） | 每次刷新成功時寫入，啟動時讀取；讀不到或格式錯誤時視為沒有快照 |
+| `snapshots.json` | 各 Provider 的快照（含金額型額度與保留重置） | 每次刷新成功時寫入，啟動時讀取；讀不到或格式錯誤時視為沒有快照 |
 | `aibar.log` | 日誌（時間、Provider、狀態碼、耗時、錯誤種類） | 超過 1 MB 改名為 `aibar.log.old`，最多保留兩份；debug 版同時印到主控台；單元測試不寫入 |
 | `secrets.bin` | OpenRouter API key（`{"openrouter": "…"}` 整份加密） | `CryptProtectData`（範圍 `CurrentUser`）加密 |
 | `notified.json` | 已通知紀錄 | 見第 7 節「通知」 |

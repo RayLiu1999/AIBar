@@ -16,9 +16,11 @@ use serde_json::Value;
 use super::{
     UsageProvider, account_hash, get_json, home_dir, read_json_file, window_name_from_seconds,
 };
-use crate::model::{FetchFailure, Snapshot, UsageWindow};
+use crate::model::{FetchFailure, ResetBank, Snapshot, UsageWindow};
 
 const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
+/// 保留重置的明細（每一筆的狀態與到期時間）
+const RESET_CREDITS_URL: &str = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits";
 
 pub struct Codex;
 
@@ -67,14 +69,59 @@ impl UsageProvider for Codex {
         let windows = parse_usage(&body).ok_or(FetchFailure::BadResponse)?;
         let plan = body["plan_type"].as_str().filter(|s| !s.is_empty()).map(plan_name);
 
+        // 保留重置的明細（含各自的到期時間）在另一個端點；失敗不影響用量本身
+        let usable = body["rate_limit_reset_credits"]["applicable_available_count"]
+            .as_u64()
+            .map(|n| n.min(u32::MAX as u64) as u32);
+        let now = SystemTime::now();
+        let resets = match get_json(
+            self.id(),
+            RESET_CREDITS_URL,
+            &[
+                ("Authorization", &bearer),
+                ("ChatGPT-Account-Id", account_id),
+                ("OpenAI-Beta", "codex-1"),
+                ("originator", "Codex Desktop"),
+            ],
+        ) {
+            Ok(v) => parse_reset_credits(&v, usable, now),
+            // 明細抓不到時退回用量回應裡的次數（沒有到期時間）
+            Err(_) => fallback_resets(&body, usable),
+        };
+
         Ok(Snapshot {
             plan,
             account_hash: account_hash(account_id),
             windows,
             credits: None,
-            fetched_at: SystemTime::now(),
+            resets,
+            fetched_at: now,
         })
     }
+}
+
+fn parse_time(v: &Value) -> Option<SystemTime> {
+    let dt = chrono::DateTime::parse_from_rfc3339(v.as_str()?).ok()?;
+    Some(UNIX_EPOCH + Duration::from_secs(dt.timestamp().try_into().ok()?))
+}
+
+/// 保留重置明細：`credits` 中 `status` 為 `available` 且尚未到期的每一筆。
+/// 不保存每筆的 `id`（那是兌換用的識別碼）。
+fn parse_reset_credits(v: &Value, usable: Option<u32>, now: SystemTime) -> Option<ResetBank> {
+    let expires = v["credits"]
+        .as_array()?
+        .iter()
+        .filter(|c| c["status"].as_str() == Some("available"))
+        .map(|c| parse_time(&c["expires_at"]))
+        .filter(|t| t.is_none_or(|t| t > now))
+        .collect();
+    ResetBank::new(expires, usable)
+}
+
+/// 退回用：用量回應的 `rate_limit_reset_credits.available_count`（只有次數，沒有到期時間）
+fn fallback_resets(v: &Value, usable: Option<u32>) -> Option<ResetBank> {
+    let n = v["rate_limit_reset_credits"]["available_count"].as_u64()?.min(50) as usize;
+    ResetBank::new(vec![None; n], usable)
 }
 
 /// 解出 JWT payload 的 exp；格式不符時回傳 None（交給伺服器判斷）
@@ -171,6 +218,34 @@ mod tests {
         });
         let w = parse_usage(&v).unwrap();
         assert_eq!(w[1].name, "每週・codex_review");
+    }
+
+    #[test]
+    fn 保留重置明細() {
+        let at = |s: u64| UNIX_EPOCH + Duration::from_secs(s);
+        let v = json!({
+            "available_count": 2,
+            "credits": [
+                { "id": "b", "status": "available", "expires_at": "2026-12-05T00:00:00Z" },
+                { "id": "a", "status": "available", "expires_at": "2026-11-20T00:00:00Z" },
+                { "id": "c", "status": "redeemed", "expires_at": "2026-11-21T00:00:00Z" },
+                { "id": "d", "status": "available", "expires_at": "2026-11-01T00:00:00Z" },
+                { "id": "e", "status": "available", "expires_at": null }
+            ]
+        });
+        // 2026-11-10T00:00:00Z
+        let bank = parse_reset_credits(&v, Some(0), at(1_794_268_800)).unwrap();
+        // 已兌換與已過期的排除；最快到期的在前，沒有到期時間的在最後
+        assert_eq!(bank.expires, [Some(at(1_795_132_800)), Some(at(1_796_428_800)), None]);
+        assert_eq!(bank.usable, Some(0));
+        assert_eq!(parse_reset_credits(&json!({ "credits": [] }), None, at(0)), None);
+    }
+
+    #[test]
+    fn 保留重置退回次數() {
+        let v = json!({ "rate_limit_reset_credits": { "applicable_available_count": 0, "available_count": 2 } });
+        assert_eq!(fallback_resets(&v, Some(0)).unwrap().expires, [None, None]);
+        assert_eq!(fallback_resets(&json!({ "rate_limit_reset_credits": null }), None), None);
     }
 
     #[test]

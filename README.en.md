@@ -15,8 +15,8 @@ Inspired by [CodexBar](https://github.com/steipete/CodexBar) for macOS, delibera
 
 | Service | Quotas shown | Data source |
 | --- | --- | --- |
-| Claude (subscription) | 5-hour, weekly (including per-model) | Claude Code credentials `~/.claude/.credentials.json` |
-| Codex (subscription) | 5-hour, weekly | Codex CLI credentials `~/.codex/auth.json` |
+| Claude (subscription) | 5-hour, weekly (including per-model), banked resets and their expiry | Claude Code credentials `~/.claude/.credentials.json` |
+| Codex (subscription) | 5-hour, weekly, banked resets and their expiry | Codex CLI credentials `~/.codex/auth.json` |
 | Antigravity | 5-hour and weekly per model group | The running Antigravity app (local language server, no internet access) |
 | Command Code | 5-hour, weekly, monthly, and spend this period | Command Code CLI credentials `~/.commandcode/auth.json` |
 | OpenRouter | Key spending limit, credit balance | An API key pasted in Settings (stored encrypted with Windows DPAPI) |

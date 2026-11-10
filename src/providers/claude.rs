@@ -15,9 +15,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde_json::Value;
 
 use super::{UsageProvider, account_hash, get_json, home_dir, read_json_file};
-use crate::model::{FetchFailure, Snapshot, UsageWindow};
+use crate::model::{FetchFailure, ResetBank, Snapshot, UsageWindow};
 
-const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
+/// `cedar_ember=1` 讓回應帶出保留重置（`cedar_ember` 區塊）
+const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage?cedar_ember=1";
+const USAGE_URL_PLAIN: &str = "https://api.anthropic.com/api/oauth/usage";
+/// 讀不到 Claude Code 版本時使用
+const FALLBACK_CLAUDE_CODE_VERSION: &str = "2.1.0";
 const FIVE_HOURS: u64 = 5 * 3600;
 const WEEK: u64 = 7 * 86400;
 
@@ -76,21 +80,65 @@ impl UsageProvider for Claude {
         let org = organization_uuid().unwrap_or_default();
 
         let auth = format!("Bearer {token}");
-        let body = get_json(
-            self.id(),
-            USAGE_URL,
-            &[("Authorization", &auth), ("anthropic-beta", "oauth-2025-04-20")],
-        )?;
+        // 伺服器依呼叫來源（surface）決定是否回傳保留重置；以 Claude Code CLI 的格式表明來源，
+        // 否則 cedar_ember 會是 eligible: false、ineligible_reason: "surface"（與 CodexBar 相同做法）
+        let user_agent = format!("claude-cli/{} (external, cli)", claude_code_version());
+        let headers = [
+            ("Authorization", auth.as_str()),
+            ("anthropic-beta", "oauth-2025-04-20"),
+            ("User-Agent", user_agent.as_str()),
+        ];
+        let body = match get_json(self.id(), USAGE_URL, &headers) {
+            // 保留重置是附加查詢；若伺服器拒絕這個參數（400／403），退回一般查詢一次
+            Err(FetchFailure::TokenExpired | FetchFailure::BadResponse) => {
+                get_json(self.id(), USAGE_URL_PLAIN, &headers)?
+            }
+            other => other?,
+        };
         let windows = parse_usage(&body).ok_or(FetchFailure::BadResponse)?;
+        let now = SystemTime::now();
 
         Ok(Snapshot {
             plan,
             account_hash: account_hash(&org),
             windows,
             credits: None,
-            fetched_at: SystemTime::now(),
+            resets: parse_resets(&body["cedar_ember"], now),
+            fetched_at: now,
         })
     }
+}
+
+/// 保留重置（claude.ai「設定 → 用量」的 Reset for free）：`cedar_ember` 區塊。
+/// `eligible` 為 true 時，`grants` 中每筆未暫停、已開始、未到期的 grant
+/// 依 `resets_left` 計入次數，到期時間為 `ends_at`（null 表示沒有到期時間）。
+/// 格式不符的 grant 直接略過；不保存 grant 的識別碼。
+fn parse_resets(v: &Value, now: SystemTime) -> Option<ResetBank> {
+    if v["eligible"].as_bool() != Some(true) {
+        return None;
+    }
+    let mut expires = Vec::new();
+    // 此刻可套用的次數：`usable_now` 為 true 的 grant；回應沒有這個欄位時為 None
+    let mut usable: Option<u32> = None;
+    for g in v["grants"].as_array()? {
+        let (Some(left), Some(false)) = (g["resets_left"].as_u64(), g["paused"].as_bool()) else {
+            continue;
+        };
+        if parse_time(&g["starts_at"]).is_some_and(|t| t > now) {
+            continue;
+        }
+        let ends = parse_time(&g["ends_at"]);
+        if ends.is_some_and(|t| t <= now) {
+            continue;
+        }
+        // 每個 grant 實際上只有一兩次；設上限避免異常資料
+        let n = (left as usize).min(50usize.saturating_sub(expires.len()));
+        expires.extend(std::iter::repeat_n(ends, n));
+        if let Some(now_ok) = g["usable_now"].as_bool() {
+            *usable.get_or_insert(0) += if now_ok { n as u32 } else { 0 };
+        }
+    }
+    ResetBank::new(expires, usable)
 }
 
 /// 帳號識別：`.claude.json` 的 `oauthAccount.organizationUuid`
@@ -99,7 +147,23 @@ fn organization_uuid() -> Option<String> {
     profile["oauthAccount"]["organizationUuid"].as_str().map(String::from)
 }
 
-/// 方案名稱：`max` + `default_claude_max_5x` →「Max 5x」；`pro` →「Pro」
+/// Claude Code 版本：`.claude.json` 的 `lastReleaseNotesSeen`（例如 "2.1.318"）；
+/// 不必另外執行 `claude --version`
+fn claude_code_version() -> String {
+    read_json_file(&profile_path().unwrap_or_default())
+        .ok()
+        .and_then(|p| p["lastReleaseNotesSeen"].as_str().map(String::from))
+        .filter(|v| valid_version(v))
+        .unwrap_or_else(|| FALLBACK_CLAUDE_CODE_VERSION.into())
+}
+
+/// 只接受「數字.數字.數字」，避免奇怪的字串進到 header
+fn valid_version(v: &str) -> bool {
+    let parts: Vec<&str> = v.split('.').collect();
+    parts.len() == 3 && parts.iter().all(|p| !p.is_empty() && p.len() <= 6 && p.chars().all(|c| c.is_ascii_digit()))
+}
+
+/// 方案名稱：`max` +`default_claude_max_5x` →「Max 5x」；`pro` →「Pro」
 fn plan_name(subscription: Option<&str>, tier: Option<&str>) -> Option<String> {
     let sub = subscription.filter(|s| !s.is_empty())?;
     let mut name = capitalize(sub);
@@ -228,6 +292,58 @@ mod tests {
         assert_eq!(w[0].name, "5 小時");
         assert_eq!(w[0].used_percent, 23.0);
         assert!(w[0].resets_at.is_some());
+    }
+
+    #[test]
+    fn 版本格式() {
+        assert!(valid_version("2.1.318"));
+        assert!(!valid_version("2.1"));
+        assert!(!valid_version("2.1.3\r\nX: y"));
+        assert!(!valid_version(""));
+    }
+
+    #[test]
+    fn 保留重置() {
+        // 2026-11-10T00:00:00Z
+        let now = UNIX_EPOCH + Duration::from_secs(1_794_268_800);
+        let v = json!({
+            "eligible": true,
+            "grants": [
+                { "resets_left": 1, "resets_total": 1, "starts_at": "2026-11-01T00:00:00Z", "ends_at": "2026-12-05T00:00:00Z", "paused": false },
+                { "resets_left": 2, "starts_at": null, "ends_at": "2026-11-20T00:00:00Z", "paused": false },
+                { "resets_left": 1, "ends_at": "2026-11-21T00:00:00Z", "paused": true },
+                { "resets_left": 1, "ends_at": "2026-11-01T00:00:00Z", "paused": false },
+                { "resets_left": 1, "starts_at": "2026-11-15T00:00:00Z", "paused": false },
+                { "resets_left": 0, "paused": false },
+                { "oops": true }
+            ]
+        });
+        let bank = parse_resets(&v, now).unwrap();
+        let nov20 = UNIX_EPOCH + Duration::from_secs(1_795_132_800);
+        let dec5 = UNIX_EPOCH + Duration::from_secs(1_796_428_800);
+        assert_eq!(bank.expires, [Some(nov20), Some(nov20), Some(dec5)]);
+        assert_eq!(bank.usable, None);
+
+        // 實際回應的形狀（2026-11-10 實測）：usable_now 決定「可套用」
+        let real = json!({
+            "eligible": true, "at_limit": false, "ineligible_reason": null,
+            "grants": [{
+                "clears": ["five_hour", "seven_day_overage_included"],
+                "ends_at": "2026-11-17T07:59:00+00:00", "starts_at": "2026-11-09T18:00:00+00:00",
+                "paused": false, "resets_left": 1, "resets_total": 1, "type": "full", "usable_now": true
+            }]
+        });
+        let bank = parse_resets(&real, now).unwrap();
+        assert_eq!(bank.expires.len(), 1);
+        assert_eq!(bank.usable, Some(1));
+
+        // 從非 CLI 來源查詢時的回應
+        let surface = json!({ "eligible": false, "ineligible_reason": "surface", "grants": [] });
+        assert!(parse_resets(&surface, now).is_none());
+
+        assert!(parse_resets(&json!({ "eligible": false, "grants": [{ "resets_left": 1, "paused": false }] }), now).is_none());
+        assert!(parse_resets(&json!(null), now).is_none());
+        assert!(parse_resets(&json!({ "eligible": true, "grants": [] }), now).is_none());
     }
 
     #[test]

@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{app_dir, write_atomic};
-use crate::model::{Credits, Snapshot, UsageWindow};
+use crate::model::{Credits, ResetBank, Snapshot, UsageWindow};
 
 const FILE_NAME: &str = "snapshots.json";
 const VERSION: u32 = 1;
@@ -33,6 +33,16 @@ struct StoredSnapshot {
     /// 金額型額度（美元）；舊版檔案沒有此欄位
     #[serde(default)]
     credits: Option<(f64, f64)>,
+    /// 保留重置；舊版檔案沒有此欄位
+    #[serde(default)]
+    reset_bank: Option<StoredResets>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct StoredResets {
+    /// 每一次重置的到期時間（Unix 秒）；null 表示沒有到期時間
+    expires: Vec<Option<u64>>,
+    usable: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -66,6 +76,10 @@ impl From<&Snapshot> for StoredSnapshot {
                 })
                 .collect(),
             credits: s.credits.as_ref().map(|c| (c.used, c.limit)),
+            reset_bank: s.resets.as_ref().map(|r| StoredResets {
+                expires: r.expires.iter().map(|t| t.map(to_secs)).collect(),
+                usable: r.usable,
+            }),
         }
     }
 }
@@ -87,6 +101,9 @@ impl From<StoredSnapshot> for Snapshot {
                 })
                 .collect(),
             credits: s.credits.map(|(used, limit)| Credits { used, limit }),
+            resets: s.reset_bank.and_then(|r| {
+                ResetBank::new(r.expires.into_iter().map(|t| t.map(from_secs)).collect(), r.usable)
+            }),
         }
     }
 }
@@ -154,6 +171,7 @@ mod tests {
                 window_secs: Some(18000),
             }],
             credits: Some(Credits { used: 4.33, limit: 10.0 }),
+            resets: ResetBank::new(vec![Some(from_secs(1_795_132_800)), None], Some(0)),
         }
     }
 
@@ -169,6 +187,7 @@ mod tests {
         assert_eq!(b.windows[0].resets_at, s.windows[0].resets_at);
         assert_eq!(b.windows[0].window_secs, Some(18000));
         assert_eq!(b.credits, s.credits);
+        assert_eq!(b.resets, s.resets);
     }
 
     #[test]

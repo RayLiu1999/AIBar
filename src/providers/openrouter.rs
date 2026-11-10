@@ -46,6 +46,7 @@ impl UsageProvider for OpenRouter {
             account_hash: account_hash(&key),
             windows: parsed.windows,
             credits: parsed.credits,
+            resets: None,
             fetched_at: SystemTime::now(),
         })
     }

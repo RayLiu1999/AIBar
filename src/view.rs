@@ -6,7 +6,7 @@ use std::time::{Duration, SystemTime};
 use chrono::{DateTime, Datelike, Local, Timelike, Weekday};
 use slint::{Color, ModelRc, VecModel};
 
-use crate::model::{Credits, FetchFailure, ProviderStatus, Snapshot, UsageWindow};
+use crate::model::{Credits, FetchFailure, ProviderStatus, ResetBank, Snapshot, UsageWindow};
 use crate::{CardData, UsageLevel, WindowRow};
 
 /// 快照年齡超過此數個背景刷新間隔即為舊快照
@@ -277,6 +277,64 @@ pub fn credits_text(c: &Credits) -> String {
     }
 }
 
+/// 最快到期的重置在這段時間內到期時，以警示色提醒
+const RESET_EXPIRY_SOON: Duration = Duration::from_secs(3 * 86400);
+
+/// 保留重置摘要：「已存 2 次重置・最快 11/20（五）08:00 到期」「可套用 1 次重置（共 2 次）」；
+/// 一次都沒有時為空字串
+pub fn resets_text(r: &ResetBank, now: SystemTime) -> String {
+    let left = r.remaining(now);
+    let n = left.len();
+    if n == 0 {
+        return String::new();
+    }
+    let count = match r.usable {
+        Some(u) if u >= n as u32 => format!("可套用 {n} 次重置"),
+        Some(u) if u > 0 => format!("可套用 {u} 次重置（共 {n} 次）"),
+        _ => format!("已存 {n} 次重置"),
+    };
+    match left[0] {
+        Some(t) if n > 1 => format!("{count}・最快 {} 到期", absolute_time(t, now)),
+        Some(t) => format!("{count}・{} 到期", absolute_time(t, now)),
+        None => count,
+    }
+}
+
+/// 最快到期的重置是否快到期了
+pub fn resets_expiring_soon(r: &ResetBank, now: SystemTime) -> bool {
+    r.remaining(now)
+        .first()
+        .copied()
+        .flatten()
+        .is_some_and(|t| t.duration_since(now).unwrap_or_default() <= RESET_EXPIRY_SOON)
+}
+
+/// 保留重置明細（Provider 頁籤）：每次重置一行到期時間，最後一行是套用方式
+pub fn resets_detail(r: &ResetBank, provider_id: &str, now: SystemTime) -> String {
+    let left = r.remaining(now);
+    if left.is_empty() {
+        return String::new();
+    }
+    let mut lines: Vec<String> = left
+        .iter()
+        .flatten()
+        .map(|&t| {
+            let d = t.duration_since(now).unwrap_or_default();
+            format!("{} 到期（剩 {}）", absolute_time(t, now), duration_text(d))
+        })
+        .collect();
+    let howto = match provider_id {
+        "claude" => "在 claude.ai 或桌面版的「設定 → 用量」按 Reset for free 套用".to_string(),
+        "codex" if r.usable.unwrap_or(0) > 0 => "在 codex 中輸入 /usage 套用".to_string(),
+        "codex" => "撞到上限時，在 codex 中輸入 /usage 套用".to_string(),
+        _ => String::new(),
+    };
+    if !howto.is_empty() {
+        lines.push(howto);
+    }
+    lines.join("\n")
+}
+
 fn color(rgb: [u8; 3]) -> Color {
     Color::from_rgb_u8(rgb[0], rgb[1], rgb[2])
 }
@@ -314,6 +372,7 @@ fn row(w: &UsageWindow, mode: DisplayMode, now: SystemTime) -> WindowRow {
 pub fn card(s: &ProviderStatus, mode: DisplayMode, now: SystemTime) -> CardData {
     let meta = provider_meta(s.provider_id);
     let snap = s.snapshot.as_ref();
+    let resets = snap.and_then(|sn| sn.resets.as_ref());
     let rows: Vec<WindowRow> = snap
         .map(|sn| sn.windows.iter().map(|w| row(w, mode, now)).collect())
         .unwrap_or_default();
@@ -356,6 +415,12 @@ pub fn card(s: &ProviderStatus, mode: DisplayMode, now: SystemTime) -> CardData 
             .map(credits_text)
             .unwrap_or_default()
             .into(),
+        resets_text: resets.map(|r| resets_text(r, now)).unwrap_or_default().into(),
+        resets_detail: resets
+            .map(|r| resets_detail(r, s.provider_id, now))
+            .unwrap_or_default()
+            .into(),
+        resets_soon: resets.is_some_and(|r| resets_expiring_soon(r, now)),
         refreshing: s.refreshing,
         source: meta.source.into(),
         usage_url: meta.usage_url.into(),
@@ -505,6 +570,7 @@ mod tests {
             account_hash: String::new(),
             windows,
             credits: None,
+            resets: None,
             fetched_at: now - Duration::from_secs(age_secs),
         }
     }
@@ -526,6 +592,40 @@ mod tests {
         assert!(failure_text(&FetchFailure::NotRunning, "antigravity").contains("未執行"));
         assert_eq!(credits_text(&Credits { used: 4.333, limit: 10.0 }), "本期已用 $4.33 / $10.00");
         assert_eq!(credits_text(&Credits { used: 3.2, limit: 0.0 }), "本月已用 $3.20（無上限）");
+    }
+
+    #[test]
+    fn 保留重置文字() {
+        let now = SystemTime::now();
+        let in_days = |d: u64| Some(now + Duration::from_secs(d * 86400 + 30));
+        let bank = |expires: Vec<Option<SystemTime>>, usable| ResetBank::new(expires, usable).unwrap();
+
+        // 只有次數、沒有到期時間
+        assert_eq!(resets_text(&bank(vec![None, None], Some(0)), now), "已存 2 次重置");
+        assert_eq!(resets_text(&bank(vec![None, None], Some(2)), now), "可套用 2 次重置");
+        assert_eq!(resets_text(&bank(vec![None, None], Some(1)), now), "可套用 1 次重置（共 2 次）");
+
+        // 有到期時間：摘要寫最快到期的那一次
+        let b = bank(vec![in_days(20), in_days(10)], None);
+        let soonest = absolute_time(in_days(10).unwrap(), now);
+        assert_eq!(resets_text(&b, now), format!("已存 2 次重置・最快 {soonest} 到期"));
+        assert!(!resets_expiring_soon(&b, now));
+        let one = bank(vec![in_days(2)], None);
+        assert!(resets_text(&one, now).starts_with("已存 1 次重置・"));
+        assert!(resets_expiring_soon(&one, now));
+
+        // 已過期的不算
+        let expired = bank(vec![Some(now - Duration::from_secs(1))], None);
+        assert_eq!(resets_text(&expired, now), "");
+        assert_eq!(resets_detail(&expired, "codex", now), "");
+
+        // 明細：每次一行，最後是套用方式
+        let d = resets_detail(&b, "codex", now);
+        let lines: Vec<&str> = d.lines().collect();
+        assert_eq!(lines.len(), 3);
+        assert!(lines[0].starts_with(&soonest) && lines[0].contains("（剩 10 天"));
+        assert_eq!(lines[2], "撞到上限時，在 codex 中輸入 /usage 套用");
+        assert!(resets_detail(&b, "claude", now).ends_with("按 Reset for free 套用"));
     }
 
     #[test]

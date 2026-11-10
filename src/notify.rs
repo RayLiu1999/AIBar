@@ -182,6 +182,7 @@ mod tests {
                     window_secs: None,
                 }],
                 credits: None,
+                resets: None,
                 fetched_at: now,
             }),
             last_failure: None,

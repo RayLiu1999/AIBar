@@ -12,7 +12,35 @@ pub struct Snapshot {
     pub windows: Vec<UsageWindow>,
     /// 以金額計的額度（Command Code、OpenRouter）；沒有時為 None
     pub credits: Option<Credits>,
+    /// 保留重置（Claude、Codex）；服務沒有提供或一次都沒有時為 None
+    pub resets: Option<ResetBank>,
     pub fetched_at: SystemTime,
+}
+
+/// 保留重置：先存起來、需要時再套用的額度重置
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResetBank {
+    /// 手上每一次重置的到期時間，最快到期的在前；None 表示沒有到期時間或不明（排在最後）
+    pub expires: Vec<Option<SystemTime>>,
+    /// 此刻能套用的次數（Codex 才有；沒撞到上限時通常為 0）；不明時為 None
+    pub usable: Option<u32>,
+}
+
+impl ResetBank {
+    /// 依到期時間排序後建立；一次都沒有時回傳 None
+    pub fn new(mut expires: Vec<Option<SystemTime>>, usable: Option<u32>) -> Option<Self> {
+        if expires.is_empty() {
+            return None;
+        }
+        // None（沒有到期時間）排在最後
+        expires.sort_by_key(|t| (t.is_none(), *t));
+        Some(Self { expires, usable })
+    }
+
+    /// 在 `now` 仍有效的重置（排除已過期的）
+    pub fn remaining(&self, now: SystemTime) -> Vec<Option<SystemTime>> {
+        self.expires.iter().copied().filter(|t| t.is_none_or(|t| t > now)).collect()
+    }
 }
 
 /// 以美元計的額度：本期已用與上限

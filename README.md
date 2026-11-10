@@ -15,8 +15,8 @@ Windows 系統匣的 AI 訂閱用量小工具。不用開網頁或 CLI，看一�
 
 | 服務 | 顯示的額度 | 資料來源 |
 | --- | --- | --- |
-| Claude（訂閱） | 5 小時、每週（含指定模型） | Claude Code 的登入憑證 `~/.claude/.credentials.json` |
-| Codex（訂閱） | 5 小時、每週 | Codex CLI 的登入憑證 `~/.codex/auth.json` |
+| Claude（訂閱） | 5 小時、每週（含指定模型），與保留重置次數及到期時間 | Claude Code 的登入憑證 `~/.claude/.credentials.json` |
+| Codex（訂閱） | 5 小時、每週，與保留重置次數及到期時間 | Codex CLI 的登入憑證 `~/.codex/auth.json` |
 | Antigravity | 各模型組的 5 小時、每週 | 執行中的 Antigravity App（本機 language server，不連外網） |
 | Command Code | 5 小時、每週、每月，與本期花費 | Command Code CLI 的登入憑證 `~/.commandcode/auth.json` |
 | OpenRouter | Key 的花費上限、儲值餘額 | 在設定視窗貼上的 API key（以 Windows DPAPI 加密保存） |

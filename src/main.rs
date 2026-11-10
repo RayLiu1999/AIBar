@@ -309,6 +309,13 @@ fn probe(only: Option<&str>) {
                         view::reset_text(w, SystemTime::now())
                     );
                 }
+                if let Some(r) = &s.resets {
+                    let now = SystemTime::now();
+                    eprintln!("  {}", view::resets_text(r, now));
+                    for line in view::resets_detail(r, p.id(), now).lines() {
+                        eprintln!("    {line}");
+                    }
+                }
             }
             Err(e) => eprintln!("失敗：{e:?}"),
         }
