@@ -285,35 +285,43 @@ component WindowLine inherits VerticalLayout {
     in property <color> accent;
     in property <bool> detail;
 
+    // 名稱、數值與重置倒數放得進同一行；放不下時重置倒數改到進度條下方
+    property <bool> reset-inline: name-row.preferred-width + 12px + reset-top.preferred-width <= self.width;
+
     spacing: 6px;
     padding-top: 10px;
     padding-bottom: 10px;
 
-    HorizontalLayout {
-        spacing: 8px;
-        Text {
-            text: root.usage.name;
-            font-size: root.detail ? 15px : 14px;
-            font-weight: 700;
-            color: Theme.text;
-            horizontal-stretch: 0;
+    // 以絕對位置排版：兩側寬度只用來量測，不回頭影響自己的寬度
+    Rectangle {
+        height: name-row.preferred-height;
+
+        name-row := HorizontalLayout {
+            x: 0;
+            width: self.preferred-width;
+            spacing: 8px;
+            Text {
+                text: root.usage.name;
+                font-size: root.detail ? 15px : 14px;
+                font-weight: 700;
+                color: Theme.text;
+            }
+            Text {
+                text: root.usage.value-text;
+                font-size: root.detail ? 15px : 14px;
+                font-weight: 700;
+                color: root.usage.level == UsageLevel.normal ? Theme.text : Theme.level-color(root.usage.level, root.accent);
+            }
         }
-        Text {
-            text: root.usage.value-text;
-            font-size: root.detail ? 15px : 14px;
-            font-weight: 700;
-            color: root.usage.level == UsageLevel.normal ? Theme.text : Theme.level-color(root.usage.level, root.accent);
-            horizontal-stretch: 0;
-        }
-        Rectangle {
-            horizontal-stretch: 1;
-        }
-        Text {
+        reset-top := Text {
+            visible: root.reset-inline;
+            x: parent.width - self.width;
+            width: self.preferred-width;
+            height: parent.height;
             text: root.usage.reset-text;
             font-size: 12px;
             color: Theme.subtext;
             vertical-alignment: center;
-            horizontal-stretch: 0;
         }
     }
 
@@ -342,7 +350,8 @@ component WindowLine inherits VerticalLayout {
         }
     }
 
-    if root.usage.pace-text != "" || (root.detail && root.usage.reset-abs != ""): HorizontalLayout {
+    // 進度說明；右側為絕對重置時間（Provider 頁籤），或標題行放不下時移來的重置倒數（總覽）
+    if root.usage.pace-text != "" || (root.detail ? root.reset-inline && root.usage.reset-abs != "" : !root.reset-inline): HorizontalLayout {
         spacing: 8px;
         Text {
             text: root.usage.pace-text;
@@ -351,12 +360,20 @@ component WindowLine inherits VerticalLayout {
             wrap: word-wrap;
             horizontal-stretch: 1;
         }
-        if root.detail: Text {
-            text: root.usage.reset-abs;
+        if root.detail ? root.reset-inline : !root.reset-inline: Text {
+            text: root.detail ? root.usage.reset-abs : root.usage.reset-text;
             font-size: 12px;
             color: Theme.subtext;
             horizontal-stretch: 0;
         }
+    }
+
+    // Provider 頁籤且標題行放不下：重置倒數與絕對時間獨立一行，避免和進度說明擠在一起
+    if root.detail && !root.reset-inline: Text {
+        text: root.usage.reset-abs != "" ? root.usage.reset-text + "（" + root.usage.reset-abs + "）" : root.usage.reset-text;
+        font-size: 12px;
+        color: Theme.subtext;
+        horizontal-alignment: right;
     }
 }
 
@@ -742,6 +759,7 @@ export component MainWindow inherits Window {
                         tab-row := HorizontalLayout {
                             height: tabs.height;
                             spacing: 2px;
+                            alignment: start;
                             TabButton {
                                 text: "總覽";
                                 selected: root.selected-tab == 0;
