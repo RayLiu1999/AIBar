@@ -29,7 +29,7 @@ use std::time::{Duration, SystemTime};
 
 use slint::{ComponentHandle, ModelRc, VecModel};
 
-use config::Config;
+use config::{Config, OverviewLayout};
 use main_window::MainWindowHost;
 use model::ProviderStatus;
 use scheduler::Scheduler;
@@ -425,6 +425,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     ui.on_open_url(|url| platform::open_url(&url));
     ui.on_open_settings(with_app(|app| app.open_settings(None)));
+    ui.set_columns(app.config.borrow().overview_layout == OverviewLayout::Columns);
+    ui.on_columns_toggled(|on| {
+        with_app(move |app| {
+            app.config.borrow_mut().overview_layout = if on {
+                OverviewLayout::Columns
+            } else {
+                OverviewLayout::List
+            };
+            app.save_config();
+            app.window.set_columns(on);
+        })()
+    });
 
     app.tray.on_left_clicked(with_app(|app| app.window.toggle()));
     app.tray.on_refresh_now(with_app(|app| app.scheduler.refresh_now()));

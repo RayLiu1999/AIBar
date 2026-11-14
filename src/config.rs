@@ -22,6 +22,17 @@ pub enum Display {
     Used,
 }
 
+/// 總覽的排列方式
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OverviewLayout {
+    /// 卡片由上往下排成一欄
+    #[default]
+    List,
+    /// 卡片左右並排，視窗寬度不夠時換列
+    Columns,
+}
+
 /// 主視窗的位置與大小（實體像素）
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WindowGeometry {
@@ -39,6 +50,7 @@ pub struct Config {
     pub display: Display,
     /// "overview" 或 Provider id
     pub selected_tab: String,
+    pub overview_layout: OverviewLayout,
     pub window: Option<WindowGeometry>,
     /// 額度快用完時是否發 Toast 通知
     pub notifications: bool,
@@ -56,6 +68,7 @@ impl Default for Config {
                 .collect(),
             display: Display::Remaining,
             selected_tab: "overview".into(),
+            overview_layout: OverviewLayout::List,
             window: None,
             notifications: true,
         }
@@ -190,6 +203,7 @@ mod tests {
         assert!(cfg.is_enabled("openrouter"), "新加入且偵測得到的 Provider 預設啟用");
         assert_eq!(cfg.display, Display::Remaining);
         assert_eq!(cfg.selected_tab, "overview");
+        assert_eq!(cfg.overview_layout, OverviewLayout::List, "舊設定檔沒有此欄位時為清單");
     }
 
     #[test]
@@ -207,10 +221,12 @@ mod tests {
     fn 序列化格式() {
         let cfg = Config {
             display: Display::Used,
+            overview_layout: OverviewLayout::Columns,
             ..Config::default()
         };
         let text = serde_json::to_string(&cfg).unwrap();
         assert!(text.contains(r#""display":"used""#));
+        assert!(text.contains(r#""overview_layout":"columns""#));
         assert_eq!(serde_json::from_str::<Config>(&text).unwrap(), cfg);
     }
 }

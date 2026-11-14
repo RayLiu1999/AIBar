@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 use slint::winit_030::winit::event::WindowEvent;
 use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::winit_030::{EventResult, WinitWindowAccessor};
-use slint::{CloseRequestResponse, ComponentHandle, ModelRc, PhysicalPosition, PhysicalSize, VecModel};
-use windows::Win32::Foundation::{HWND, POINT};
+use slint::{CloseRequestResponse, ComponentHandle, Model, ModelRc, PhysicalPosition, PhysicalSize, VecModel};
+use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, MONITORINFO, MonitorFromPoint,
 };
@@ -23,15 +23,21 @@ use crate::{CardData, MainWindow};
 /// 第一次開啟時的視窗大小（邏輯像素，需與 main_window.slint 的 preferred 尺寸一致）
 const INITIAL_W: f32 = 460.0;
 const INITIAL_H: f32 = 640.0;
+/// 視窗左右邊框合計的寬度（邏輯像素，約略值）
+const FRAME_W: f32 = 16.0;
+/// 總覽並排時，視窗加寬到每欄這麼寬（邏輯像素；需大於 main_window.slint 的 column-min-width）
+const COLUMN_W: f32 = 340.0;
+/// 總覽左右內距與欄距（需與 main_window.slint 一致），以及捲軸預留的寬度
+const OVERVIEW_PADDING: f32 = 14.0;
+const COLUMN_GAP: f32 = 12.0;
+const SCROLLBAR_W: f32 = 16.0;
 /// 點托盤會讓視窗先失焦；這段時間內失焦的視窗，仍視為點擊當下在最前面
 const FOCUS_GRACE: Duration = Duration::from_millis(400);
 /// 視窗顯示後延遲這麼久再搶前景（視窗要到下一輪事件迴圈才真正出現）
 pub const FOCUS_DELAY: Duration = Duration::from_millis(30);
 
-/// 游標所在螢幕工作區正中央的視窗左上角位置（實體像素）
-fn initial_position() -> Option<PhysicalPosition> {
-    let mut p = POINT::default();
-    unsafe { GetCursorPos(&mut p) }.ok()?;
+/// 點所在（或最近的）螢幕的工作區（實體像素）與縮放比例
+fn work_area(p: POINT) -> Option<(RECT, f32)> {
     let hmon = unsafe { MonitorFromPoint(p, MONITOR_DEFAULTTONEAREST) };
     let mut mi = MONITORINFO {
         cbSize: size_of::<MONITORINFO>() as u32,
@@ -45,9 +51,16 @@ fn initial_position() -> Option<PhysicalPosition> {
         Ok(()) => dx as f32 / 96.0,
         Err(_) => 1.0,
     };
-    let wk = mi.rcWork;
+    Some((mi.rcWork, scale))
+}
+
+/// 游標所在螢幕工作區正中央的視窗左上角位置（實體像素）
+fn initial_position() -> Option<PhysicalPosition> {
+    let mut p = POINT::default();
+    unsafe { GetCursorPos(&mut p) }.ok()?;
+    let (wk, scale) = work_area(p)?;
     // 一般視窗含標題列與邊框，外框比內容區大一些，預留 48 邏輯像素
-    let w = ((INITIAL_W + 16.0) * scale) as i32;
+    let w = ((INITIAL_W + FRAME_W) * scale) as i32;
     let h = ((INITIAL_H + 48.0) * scale) as i32;
     let x = wk.left + ((wk.right - wk.left) - w) / 2;
     let y = wk.top + ((wk.bottom - wk.top) - h) / 2;
@@ -86,6 +99,8 @@ pub struct MainWindowHost {
     cards: Rc<VecModel<CardData>>,
     /// 上次存下的位置與大小，第一次顯示時套用
     saved: Cell<Option<WindowGeometry>>,
+    /// 切到並排前的視窗寬度（實體像素），切回清單時還原
+    list_width: Cell<Option<u32>>,
     on_shown: Box<dyn Fn()>,
     on_hidden: Box<dyn Fn(WindowGeometry)>,
 }
@@ -139,6 +154,7 @@ impl MainWindowHost {
                 focus_lost_at: Cell::default(),
                 cards,
                 saved: Cell::new(saved),
+                list_width: Cell::default(),
                 on_shown: Box::new(on_shown),
                 on_hidden: Box::new(on_hidden),
             }
@@ -163,6 +179,40 @@ impl MainWindowHost {
             y: pos.y,
             width: size.width,
             height: size.height,
+        }
+    }
+
+    /// 切換總覽的排列方式並調整視窗寬度：並排時加寬到每個 Provider 一欄（不超出螢幕），
+    /// 切回清單時還原切換前的寬度
+    pub fn set_columns(&self, columns: bool) {
+        self.window.set_columns(columns);
+        let win = self.window.window();
+        if !win.is_visible() {
+            return;
+        }
+        let size = win.size();
+        let pos = win.position();
+        let Some((wk, scale)) = work_area(POINT {
+            x: pos.x + size.width as i32 / 2,
+            y: pos.y + 20,
+        }) else {
+            return;
+        };
+        let width = if columns {
+            self.list_width.set(Some(size.width));
+            let n = self.cards.row_count().max(1) as f32;
+            let logical = 2.0 * OVERVIEW_PADDING + n * COLUMN_W + (n - 1.0) * COLUMN_GAP + SCROLLBAR_W;
+            (logical * scale) as u32
+        } else {
+            self.list_width.take().unwrap_or((INITIAL_W * scale) as u32)
+        };
+        // 不超出螢幕工作區；右側超出時往左移
+        let frame = (FRAME_W * scale) as i32;
+        let width = width.min(((wk.right - wk.left) - frame).max(1) as u32);
+        let x = pos.x.min(wk.right - width as i32 - frame).max(wk.left);
+        win.set_size(PhysicalSize::new(width, size.height));
+        if x != pos.x {
+            win.set_position(PhysicalPosition::new(x, pos.y));
         }
     }
 

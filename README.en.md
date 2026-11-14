@@ -30,6 +30,7 @@ Any service whose CLI you have logged in to is enabled automatically on first la
 
 - **Tray icon**: the number is the remaining percentage of the tightest quota of the *focused service*. On the Overview tab the focused service is the first one in your order; switching to a service's tab makes the tray follow it. Below 30% the tile turns yellow, below 10% red; stale data turns it gray; an error adds a yellow dot. Hover for a summary of every service.
 - **Left click**: show or hide the main window. It can be moved and resized and remembers its position; X or Esc only hides it to the tray.
+- **Overview layout**: the switch at the top right of the Overview picks *list* (top to bottom) or *side by side* (the window widens so every service is visible at once).
 - **Right click**: Refresh now, Settings, About, Quit.
 - **Pace marker**: the white tick on a progress bar marks how much should be left at this point in the window. The line below says, for example, "32% under pace · lasts until reset" or "runs out in about 1 day 4 hours".
 - **Settings**: start with Windows, show remaining or used, enable and order services, OpenRouter API key, quota notifications.

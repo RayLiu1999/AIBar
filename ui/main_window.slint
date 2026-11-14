@@ -165,6 +165,78 @@ component IconButton inherits Rectangle {
     }
 }
 
+// 分段切換中的一格（圖示以 16×16 的 SVG 路徑描邊）
+component SegmentButton inherits Rectangle {
+    in property <string> label;
+    in property <string> commands;
+    in property <bool> selected;
+
+    callback clicked();
+
+    width: 30px;
+    height: 24px;
+    border-radius: 4px;
+    background: root.selected ? Theme.card-bg : ta.has-hover ? Theme.hover : transparent;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-checked: root.selected;
+
+    Path {
+        x: 7px;
+        y: 4px;
+        width: 16px;
+        height: 16px;
+        viewbox-width: 16;
+        viewbox-height: 16;
+        commands: root.commands;
+        stroke: root.selected ? Theme.text : Theme.subtext;
+        stroke-width: 1.3px;
+        fill: transparent;
+    }
+
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// 總覽的排列方式：清單｜並排
+component LayoutSwitch inherits Rectangle {
+    in property <bool> columns;
+
+    callback toggled(bool);
+
+    background: Theme.chip-bg;
+    border-radius: 6px;
+
+    HorizontalLayout {
+        padding: 2px;
+        spacing: 2px;
+        SegmentButton {
+            label: "清單";
+            commands: "M 2 3.5 L 14 3.5 M 2 8 L 14 8 M 2 12.5 L 14 12.5";
+            selected: !root.columns;
+            clicked => {
+                if (root.columns) {
+                    root.toggled(false);
+                }
+            }
+        }
+        SegmentButton {
+            label: "並排";
+            commands: "M 2 2.5 L 6.5 2.5 L 6.5 13.5 L 2 13.5 Z M 9.5 2.5 L 14 2.5 L 14 13.5 L 9.5 13.5 Z";
+            selected: root.columns;
+            clicked => {
+                if (!root.columns) {
+                    root.toggled(true);
+                }
+            }
+        }
+    }
+}
+
 // 代表色字母方塊
 component Monogram inherits Rectangle {
     in property <string> text;
@@ -598,8 +670,17 @@ export component MainWindow inherits Window {
     in property <string> headline;
     // 0 為總覽，n 為 cards[n - 1]
     in property <int> selected-tab;
+    // 總覽的卡片左右並排
+    in property <bool> columns;
+    // 並排時每欄的最小寬度（需與 main_window.rs 的 COLUMN_W 搭配）
+    out property <length> column-min-width: 300px;
+    // 並排的欄數與欄寬：由可見寬度決定、不依賴內容，避免版面循環（28px 為左右內距）
+    private property <length> inner-width: scroll.visible-width - 28px;
+    private property <int> column-count: max(1, min(root.cards.length, floor((self.inner-width + 12px) / (root.column-min-width + 12px))));
+    private property <length> column-width: (self.inner-width - (self.column-count - 1) * 12px) / self.column-count;
 
     callback refresh-all();
+    callback columns-toggled(bool);
     callback hide-requested();
     callback tab-selected(int);
     callback copy-text(string);
@@ -749,16 +830,46 @@ export component MainWindow inherits Window {
                     padding: 14px;
                     spacing: 12px;
 
-                    if root.selected-tab == 0 && root.headline != "": Text {
-                        text: root.headline;
-                        font-size: 13px;
-                        color: Theme.subtext;
+                    if root.selected-tab == 0 && root.cards.length > 0: HorizontalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: root.headline;
+                            font-size: 13px;
+                            color: Theme.subtext;
+                            wrap: word-wrap;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 0;
+                            LayoutSwitch {
+                                columns: root.columns;
+                                toggled(on) => {
+                                    root.columns-toggled(on);
+                                }
+                            }
+                        }
                     }
 
-                    if root.selected-tab == 0: VerticalLayout {
+                    if root.selected-tab == 0 && !root.columns: VerticalLayout {
                         spacing: 12px;
                         for card in root.cards: ProviderCard {
                             data: card;
+                        }
+                    }
+
+                    // 並排：欄數依視窗寬度而定，卡片依序輪流放進各欄
+                    if root.selected-tab == 0 && root.columns: HorizontalLayout {
+                        spacing: 12px;
+                        alignment: start;
+                        for c in root.column-count: VerticalLayout {
+                            alignment: start;
+                            spacing: 12px;
+                            width: root.column-width;
+                            for r in ceil((root.cards.length - c) / root.column-count): ProviderCard {
+                                data: root.cards[c + r * root.column-count];
+                            }
                         }
                     }
 
