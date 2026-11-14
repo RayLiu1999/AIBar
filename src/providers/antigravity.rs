@@ -196,6 +196,9 @@ pub(super) fn parse_summary(v: &Value) -> Option<Vec<UsageWindow>> {
             .unwrap_or_default()
             .trim_end_matches(" Models")
             .trim_end_matches(" models");
+        // 組內依視窗長度排序（5 小時在前、每週在後，與其他 Provider 一致）；
+        // 回應通常先列每週，照原順序顯示容易看錯
+        let group_start = windows.len();
         for b in group["buckets"].as_array().into_iter().flatten() {
             let remaining = &b["remaining"];
             let Some(frac) = field(b, &["remainingFraction", "remaining_fraction"])
@@ -229,6 +232,8 @@ pub(super) fn parse_summary(v: &Value) -> Option<Vec<UsageWindow>> {
                 window_secs: window_secs(window).or_else(|| window_secs(id)),
             });
         }
+        // 長度不明的排在最後；sort_by_key 是穩定排序，同長度維持原順序
+        windows[group_start..].sort_by_key(|w| w.window_secs.unwrap_or(u64::MAX));
     }
     (!windows.is_empty()).then_some(windows)
 }
