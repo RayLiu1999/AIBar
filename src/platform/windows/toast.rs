@@ -72,3 +72,9 @@ pub fn show(title: &str, body: &str) {
         log!("[通知] 無法顯示 Toast：{e}");
     }
 }
+
+/// 發一則測試通知；等待系統收下後才返回
+pub fn show_test(title: &str, body: &str) {
+    show(title, body);
+    std::thread::sleep(std::time::Duration::from_secs(1));
+}

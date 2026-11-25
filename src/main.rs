@@ -77,7 +77,7 @@ impl App {
         self.check_notifications();
     }
 
-    /// 額度跨過 80%／95% 時發 Toast（設定中可關閉）
+    /// 額度跨過 80%／95% 時發通知（設定中可關閉）
     fn check_notifications(&self) {
         if !self.config.borrow().notifications {
             return;
@@ -335,11 +335,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         probe(args.get(i + 1).map(String::as_str));
         return Ok(());
     }
-    // `--notify-test`：發一則測試通知，確認 Windows 通知設定沒有擋住 AIBar
+    // `--notify-test`：發一則測試通知，確認系統的通知設定沒有擋住 AIBar
     if args.iter().any(|a| a == "--notify-test") {
         platform::toast::init();
-        platform::toast::show("AIBar 測試通知", "看到這則通知表示額度提醒可以正常運作");
-        std::thread::sleep(Duration::from_secs(1));
+        platform::toast::show_test("AIBar 測試通知", "看到這則通知表示額度提醒可以正常運作");
         return Ok(());
     }
 
@@ -349,12 +348,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     log!("AIBar {} 啟動", env!("CARGO_PKG_VERSION"));
     platform::toast::init();
-    // 正式版：開機自啟已開啟時，把登錄的路徑更新為目前的執行檔（exe 搬過位置也能正確自啟）。
-    // 開發版不做，以免把 target\debug 的路徑寫進去。
-    #[cfg(not(debug_assertions))]
-    if platform::autostart::is_enabled() {
-        platform::autostart::set_enabled(true);
-    }
+    platform::autostart::refresh();
 
     slint::BackendSelector::new()
         .backend_name("winit".into())
