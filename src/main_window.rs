@@ -17,7 +17,7 @@ use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, SetForegroundWindow};
 
 use crate::config::WindowGeometry;
-use crate::tray_icon;
+use crate::platform;
 use crate::{CardData, MainWindow};
 
 /// 第一次開啟時的視窗大小（邏輯像素，需與 main_window.slint 的 preferred 尺寸一致）
@@ -256,7 +256,7 @@ impl MainWindowHost {
         let weak = Rc::downgrade(self);
         slint::Timer::single_shot(FOCUS_DELAY, move || {
             if let Some(host) = weak.upgrade() {
-                tray_icon::apply_app_icon(host.window.window());
+                platform::apply_app_icon(host.window.window());
                 bring_to_front(host.window.window());
             }
         });

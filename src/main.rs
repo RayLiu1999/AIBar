@@ -18,7 +18,6 @@ mod providers;
 mod scheduler;
 mod secret;
 mod snapshot_store;
-mod tray_icon;
 mod view;
 
 use std::cell::RefCell;
@@ -31,6 +30,7 @@ use slint::{ComponentHandle, ModelRc, VecModel};
 use config::{Config, OverviewLayout};
 use main_window::MainWindowHost;
 use model::ProviderStatus;
+use platform::{TrayActions, TrayHost};
 use scheduler::Scheduler;
 use view::DisplayMode;
 
@@ -42,7 +42,7 @@ const UI_TICK: Duration = Duration::from_secs(30);
 const SETTINGS_PAGE_ABOUT: i32 = 3;
 
 struct App {
-    tray: Tray,
+    tray: TrayHost,
     window: Rc<MainWindowHost>,
     settings: RefCell<Option<SettingsWindow>>,
     scheduler: Scheduler,
@@ -114,8 +114,7 @@ impl App {
         };
 
         let tray = view::tray_view(focus, &enabled, now);
-        self.tray.set_tray_icon(tray_icon::make_tray(&tray));
-        self.tray.set_tray_tooltip(tray.tooltip.into());
+        self.tray.set(&tray);
 
         let display = self.config.borrow().display;
         let ui = self.window.ui();
@@ -274,7 +273,7 @@ impl App {
             let weak = w.as_weak();
             slint::Timer::single_shot(main_window::FOCUS_DELAY, move || {
                 if let Some(w) = weak.upgrade() {
-                    tray_icon::apply_app_icon(w.window());
+                    platform::apply_app_icon(w.window());
                 }
             });
         }
@@ -368,10 +367,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .renderer_name("software".into())
         .select()?;
 
-    let tray = Tray::new()?;
-    // 必須在建立任何視窗之前就設定圖示：Slint 1.18.1 的托盤只會嘗試建立一次，
-    // 若那時圖示還是空的就會失敗且不再重試（建立主視窗會觸發這次嘗試）
-    tray.set_tray_icon(tray_icon::make_tray(&view::tray_view(None, &[], SystemTime::now())));
+    // 必須在建立任何視窗之前（原因見 TrayHost::new）
+    let tray = TrayHost::new(&view::tray_view(None, &[], SystemTime::now()))?;
 
     // 讀取設定；首次啟動時憑證檔存在的 Provider 預設啟用
     let all = providers::all();
@@ -437,14 +434,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })()
     });
 
-    app.tray.on_left_clicked(with_app(|app| app.window.toggle()));
-    app.tray.on_refresh_now(with_app(|app| app.scheduler.refresh_now()));
-    app.tray.on_open_settings(with_app(|app| app.open_settings(None)));
-    app.tray
-        .on_show_about(with_app(|app| app.open_settings(Some(SETTINGS_PAGE_ABOUT))));
-    app.tray.on_quit(|| {
-        let _ = slint::quit_event_loop();
-    });
+    app.tray.connect(
+        &app.window,
+        TrayActions {
+            refresh: Box::new(with_app(|app| app.scheduler.refresh_now())),
+            settings: Box::new(with_app(|app| app.open_settings(None))),
+            about: Box::new(with_app(|app| app.open_settings(Some(SETTINGS_PAGE_ABOUT)))),
+            quit: Box::new(|| {
+                let _ = slint::quit_event_loop();
+            }),
+        },
+    );
 
     app.render();
     let tick = slint::Timer::default();
