@@ -422,8 +422,6 @@ AIBar/
     ├── main.rs               // 進入點、單一執行個體、事件迴圈
     ├── model.rs              // Snapshot、UsageWindow、FetchFailure、ProviderStatus
     ├── view.rs               // 模型轉畫面：卡片、進度、托盤內容與 Tooltip、時間文字
-    ├── main_window.rs        // 主視窗顯示／隱藏、位置記憶、前景
-    ├── tray_icon.rs          // 繪製托盤數字圖示（GDI 文字）與 App 圖示
     ├── icon_art.rs           // 共用繪圖與 App 圖示（build.rs 也引用）
     ├── scheduler.rs          // 刷新排程與退避（背景執行緒 + channel）
     ├── config.rs             // config.json 讀寫、首次啟動自動偵測
@@ -436,6 +434,9 @@ AIBar/
     │   └── windows/
     │       ├── system.rs       // 單一執行個體、剪貼簿、開啟網址
     │       ├── paths.rs        // AIBar、家目錄、Antigravity、agy 的位置
+    │       ├── main_window.rs  // 主視窗顯示／隱藏、位置記憶、前景
+    │       ├── tray.rs         // 托盤圖示與右鍵選單
+    │       ├── tray_icon.rs    // 繪製托盤數字圖示（GDI 文字）與 App 圖示
     │       ├── autostart.rs    // 登錄檔 Run 鍵與 StartupApproved
     │       ├── secret_store.rs // secrets.bin 的 DPAPI 加解密
     │       ├── toast.rs        // Toast 通知與 AUMID
