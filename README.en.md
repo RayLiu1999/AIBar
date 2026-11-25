@@ -5,24 +5,24 @@
 [![CI](https://github.com/RayLiu1999/AIBar/actions/workflows/ci.yml/badge.svg)](https://github.com/RayLiu1999/AIBar/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/RayLiu1999/AIBar)](https://github.com/RayLiu1999/AIBar/releases/latest)
 
-A Windows system-tray widget for AI subscription usage. See how much of your Claude, Codex and other quotas is left, and when they reset, without opening a website or a CLI.
+A Windows system-tray and macOS menu-bar widget for AI subscription usage. See how much of your Claude, Codex and other quotas is left, and when they reset, without opening a website or a CLI.
 
 - The tray icon shows the remaining percentage; its border color tells you which service it is
 - A tabbed main window lists every usage window with progress bars, reset countdowns, and whether your current pace lasts until the reset
 - No passwords: it reuses the credentials your CLIs already have, read-only
 - A single exe (about 8 MB), no runtime to install; about 30 MB of memory while hidden and 0 idle CPU
 
-Inspired by [CodexBar](https://github.com/steipete/CodexBar) for macOS, deliberately smaller in scope and built for Windows.
+Inspired by [CodexBar](https://github.com/steipete/CodexBar) for macOS, deliberately smaller in scope. The sections below describe the Windows version; see [macOS](#macos) for the differences.
 
 ## Supported services
 
 | Service | Quotas shown | Data source |
 | --- | --- | --- |
-| Claude (subscription) | 5-hour, weekly (including per-model), banked resets and their expiry | Claude Code credentials `~/.claude/.credentials.json` |
+| Claude (subscription) | 5-hour, weekly (including per-model), banked resets and their expiry | Claude Code credentials `~/.claude/.credentials.json` (Keychain on macOS) |
 | Codex (subscription) | 5-hour, weekly, banked resets and their expiry | Codex CLI credentials `~/.codex/auth.json` |
 | Antigravity | 5-hour and weekly per model group | The running Antigravity app (local language server, no internet access); the signed-in `agy` CLI when the app is closed |
 | Command Code | 5-hour, weekly, monthly, and spend this period | Command Code CLI credentials `~/.commandcode/auth.json` |
-| OpenRouter | Key spending limit, credit balance | An API key pasted in Settings (stored encrypted with Windows DPAPI) |
+| OpenRouter | Key spending limit, credit balance | An API key pasted in Settings (encrypted with DPAPI on Windows, stored in the Keychain on macOS) |
 
 Any service whose CLI you have logged in to is enabled automatically on first launch. When a token expires, AIBar does **not** refresh it itself (that could log your CLI out); it asks you to run the CLI once in a terminal.
 
@@ -67,10 +67,29 @@ You can verify downloads with the `SHA256SUMS.txt` attached to each release.
 
 > The tray icon may start hidden under the "^" overflow; drag it onto the taskbar to keep it visible.
 
+## macOS
+
+Requires macOS 13 or later on Apple Silicon. For now you need to build it yourself.
+
+- The menu bar shows the remaining percentage next to the icon. Click it to open the panel; click elsewhere, press Esc or click the icon again to close it. Refresh, Settings and Quit are at the top right of the panel.
+- Claude's credentials live in the Keychain and are read, never modified, through the system `security` tool. If macOS asks for permission and you deny it, AIBar won't ask again by itself; use Refresh now to retry.
+- Antigravity is supported through the `agy` CLI only.
+- Start at login and notifications work only when running from `AIBar.app`.
+
+Building needs [Rust](https://rustup.rs/), the Xcode Command Line Tools and [just](https://just.systems/):
+
+```sh
+git clone https://github.com/RayLiu1999/AIBar.git
+cd AIBar
+just install-macos   # bundles and installs to ~/Applications
+```
+
+If you have a signing identity, set `AIBAR_SIGN_IDENTITY` (for example `"Apple Development"`) so that macOS recognizes rebuilt versions as the same app; otherwise the app is signed ad hoc.
+
 ## Data and privacy
 
-- AIBar only **reads** CLI credential files and never modifies them; tokens are kept in memory only.
-- Everything it writes lives in `%APPDATA%\AiBar\`:
+- AIBar only **reads** CLI credentials and never modifies them; tokens are kept in memory only.
+- Everything it writes lives in `%APPDATA%\AiBar\` (on macOS `~/Library/Application Support/AIBar/`, with the OpenRouter API key in the Keychain instead of `secrets.bin`):
 
   | File | Contents |
   | --- | --- |
@@ -94,9 +113,9 @@ You can verify downloads with the `SHA256SUMS.txt` attached to each release.
 
 ## Development
 
-- Stack: Rust + [Slint](https://slint.dev/) (UI and system tray), `ureq` (HTTP), the `windows` crate (Win32 and WinRT).
+- Stack: Rust + [Slint](https://slint.dev/) (UI and system tray), `ureq` (HTTP), the `windows` crate (Win32 and WinRT), `objc2` (AppKit). System APIs are confined to `src/platform/`.
 - Spec: [`docs/spec.md`](docs/spec.md); glossary: [`CONTEXT.md`](CONTEXT.md); architecture decisions: [`docs/adr/`](docs/adr/) (all in Traditional Chinese).
-- Tests: `cargo test`; CI (GitHub Actions) also runs `cargo fmt --check` and `cargo clippy -- -D warnings`.
+- Tests: `cargo test`; CI (GitHub Actions) also runs `cargo fmt --check` and `cargo clippy -- -D warnings` on Windows and macOS (`just check` locally).
 - Releasing: bump `version` in `Cargo.toml`, commit, then push a matching tag (for example `git tag -a v0.2.0 -m "v0.2.0"` and `git push origin v0.2.0`); the Release workflow builds and attaches the exe, zip and checksums.
 - Each service's endpoint details live in `src/providers/<service>.rs`, so an endpoint change touches one file.
 

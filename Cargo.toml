@@ -2,7 +2,7 @@
 name = "aibar"
 version = "0.1.3"
 edition = "2024"
-description = "Windows 系統匣的 AI 訂閱用量小工具"
+description = "Windows 系統匣與 macOS 選單列的 AI 訂閱用量小工具"
 license = "MIT"
 authors = ["Ray Liu"]
 

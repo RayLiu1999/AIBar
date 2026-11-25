@@ -1,6 +1,6 @@
 # AIBar
 
-Windows 系統匣 AI 用量工具（Rust + Slint）。完整規格見 `docs/spec.md`。
+Windows 系統匣與 macOS 選單列的 AI 用量工具（Rust + Slint）。系統 API 只放在 `src/platform/`（ADR-0005）。完整規格見 `docs/spec.md`。
 
 ## Agent skills
 

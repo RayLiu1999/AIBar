@@ -1,6 +1,6 @@
 # AIBar
 
-在 Windows 系統匣顯示各 AI 訂閱服務的額度用量與重置時間，讓使用者不必開網頁或 CLI 就知道還剩多少額度。
+在 Windows 系統匣與 macOS 選單列顯示各 AI 訂閱服務的額度用量與重置時間，讓使用者不必開網頁或 CLI 就知道還剩多少額度。
 
 ## Language
 
@@ -27,6 +27,18 @@ _Avoid_: 餘額、可用量
 **進度（Pace）**：
 額度視窗的已使用比例與「已經過時間占視窗長度的比例」相比，用來判斷照目前速度能否撐到重置。
 _Avoid_: 速率、燃燒率
+
+**托盤圖示**：
+常駐在 Windows 系統匣或 macOS 選單列、代表焦點 Provider 剩餘量的圖示；只談 macOS 時稱「選單列圖示」。
+_Avoid_: 狀態列圖示、menu bar icon
+
+**主視窗**：
+顯示總覽與各 Provider 頁籤的畫面；macOS 上以面板的形式出現。
+_Avoid_: 主畫面、彈窗
+
+**面板**：
+macOS 上貼著選單列圖示彈出的主視窗，失焦即收起。
+_Avoid_: popover、popup、彈出視窗
 
 **焦點 Provider**：
 托盤圖示目前代表的 Provider：主視窗在總覽時為排序第一的啟用 Provider，在某個 Provider 頁籤時為該 Provider。

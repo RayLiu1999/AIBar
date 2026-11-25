@@ -1,4 +1,4 @@
-# Windows AI 用量托盤工具 規格書
+# AI 用量托盤工具 規格書
 
 Nov 9, 2026 · @Ray（2026-11-10 v0–v2 與 OpenRouter 完成後同步；名詞定義見根目錄 `CONTEXT.md`，架構決策見 `docs/adr/`）
 
@@ -43,7 +43,7 @@ Nov 9, 2026 · @Ray（2026-11-10 v0–v2 與 OpenRouter 完成後同步；名詞
 - Token refresh 流程（見 ADR-0001；過期時提示使用者先執行一次對應 CLI）。
 - 超額付費（Claude 的 `spend`、`extra_usage`）的顯示。
 - CodexBar 的其他 50 多個 Provider、Widget、Provider 狀態頁輪詢。
-- macOS 與 Linux 支援。
+- Linux 支援。
 
 ## 3. 技術選型
 
@@ -479,6 +479,27 @@ cargo run
 # 發佈：單一 exe，位於 target\release\aibar.exe
 cargo build --release
 ```
+
+### macOS 版的差異
+
+以上未特別說明者以 Windows 版為準，macOS 版的差異如下（理由見 ADR-0005、ADR-0006）。支援 macOS 13 以上、Apple Silicon。
+
+| 項目 | macOS 版 |
+| --- | --- |
+| 托盤圖示 | 原生 `NSStatusItem`：代表色外框、由下往上填滿剩餘量的圖示，旁邊以文字顯示剩餘百分比；低量轉黃、轉紅，舊快照轉灰，失敗時右下角加黃點。文字固定顯示百分比（100% 不顯示「滿」） |
+| 主視窗 | 面板：420×560、無邊框、圓角，置於圖示正下方且不超出該螢幕；失焦、Esc、再點一次圖示收起，並把焦點還給原本的程式。不記位置、不提供並排 |
+| 點擊 | macOS 27 以 `NSStatusItemExpandedInterfaceDelegate`，之前以 target/action。右鍵選單視系統是否送出事件；面板上有刷新、設定與結束，關於在設定視窗 |
+| 設定視窗 | 一般視窗，可用 Cmd+W 關閉 |
+| 資料夾 | `~/Library/Application Support/AIBar`，權限 0700 |
+| 單一執行個體 | 檔案鎖 `aibar.lock` |
+| Claude 憑證 | 沒有 `.credentials.json` 時以 `/usr/bin/security` 讀取 Keychain 的 `Claude Code-credentials` |
+| OpenRouter API key | Keychain（service `com.rayliu.aibar`）；每次執行最多讀一次 |
+| 開機自啟 | `SMAppService.mainAppService`，以系統的登入項目狀態為準；啟動時不重新註冊 |
+| 通知 | `UNUserNotificationCenter`，第一次需要時才請求授權 |
+| Antigravity | 只支援 agy CLI（`~/.local/bin`、`/opt/homebrew/bin`、`/usr/local/bin`、PATH）；App 的本機探測尚未支援。行程樹以 process group 終止；`BROWSER` 指向 `/usr/bin/true` |
+| 打包 | `just bundle-macos` 產生 `dist/AIBar.app`，簽章身分由 `AIBAR_SIGN_IDENTITY` 指定，未設定時為 ad-hoc。目前不發布附件 |
+
+開機自啟與通知只在 `.app` 內執行時可用。
 
 ## 11. 開發里程碑
 

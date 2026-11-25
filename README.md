@@ -5,24 +5,24 @@
 [![CI](https://github.com/RayLiu1999/AIBar/actions/workflows/ci.yml/badge.svg)](https://github.com/RayLiu1999/AIBar/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/RayLiu1999/AIBar)](https://github.com/RayLiu1999/AIBar/releases/latest)
 
-Windows 系統匣的 AI 訂閱用量小工具。不用開網頁或 CLI，看一眼托盤就知道 Claude、Codex 等服務的額度還剩多少、何時重置。
+Windows 系統匣與 macOS 選單列的 AI 訂閱用量小工具。不用開網頁或 CLI，看一眼就知道 Claude、Codex 等服務的額度還剩多少、何時重置。
 
 - 托盤圖示直接寫著「還剩幾 %」，外框顏色代表是哪一家
 - 主視窗以頁籤列出各家的額度視窗、進度條、重置倒數，以及「照目前速度能不能撐到重置」
 - 免輸入密碼：借用各 CLI 已登入的憑證，只讀不寫
 - 單一 exe（約 8 MB），免安裝 runtime；視窗隱藏時記憶體約 30 MB、閒置 CPU 為 0
 
-靈感來自 macOS 的 [CodexBar](https://github.com/steipete/CodexBar)，範圍刻意縮小，專為 Windows 打造。
+靈感來自 macOS 的 [CodexBar](https://github.com/steipete/CodexBar)，範圍刻意縮小。以下以 Windows 版為主，macOS 版的差異見〈macOS 版〉。
 
 ## 支援的服務
 
 | 服務 | 顯示的額度 | 資料來源 |
 | --- | --- | --- |
-| Claude（訂閱） | 5 小時、每週（含指定模型），與保留重置次數及到期時間 | Claude Code 的登入憑證 `~/.claude/.credentials.json` |
+| Claude（訂閱） | 5 小時、每週（含指定模型），與保留重置次數及到期時間 | Claude Code 的登入憑證 `~/.claude/.credentials.json`（macOS 為 Keychain） |
 | Codex（訂閱） | 5 小時、每週，與保留重置次數及到期時間 | Codex CLI 的登入憑證 `~/.codex/auth.json` |
 | Antigravity | 各模型組的 5 小時、每週 | 執行中的 Antigravity App（本機 language server，不連外網）；App 沒開時改用已登入的 agy CLI |
 | Command Code | 5 小時、每週、每月，與本期花費 | Command Code CLI 的登入憑證 `~/.commandcode/auth.json` |
-| OpenRouter | Key 的花費上限、儲值餘額 | 在設定視窗貼上的 API key（以 Windows DPAPI 加密保存） |
+| OpenRouter | Key 的花費上限、儲值餘額 | 在設定視窗貼上的 API key（Windows 以 DPAPI 加密，macOS 存在 Keychain） |
 
 只要對應的 CLI 登入過一次，第一次啟動時就會自動啟用該服務。Token 過期時 AIBar **不會**自行換發（避免把你的 CLI 登出），只會提示你在終端機執行一次對應的 CLI。
 
@@ -65,10 +65,29 @@ Windows 系統匣的 AI 訂閱用量小工具。不用開網頁或 CLI，看一�
 
 > 托盤圖示預設可能收在工作列的「^」裡，可以拖到工作列上常駐顯示。
 
+## macOS 版
+
+支援 macOS 13 以上、Apple Silicon，目前需自行建置。
+
+- 選單列圖示旁直接顯示「還剩幾 %」；點圖示彈出面板，點外面、按 Esc 或再點一次圖示收起。面板右上角有刷新、設定與結束。
+- Claude 的憑證在 Keychain，以系統的 `security` 指令唯讀取得。若跳出授權視窗而你按了拒絕，AIBar 不會自動再問，按「立即刷新」才會重試。
+- Antigravity 目前只支援 agy CLI。
+- 開機自啟與通知只有從 `AIBar.app` 執行時可用。
+
+建置需要 [Rust](https://rustup.rs/)、Xcode Command Line Tools 與 [just](https://just.systems/)：
+
+```sh
+git clone https://github.com/RayLiu1999/AIBar.git
+cd AIBar
+just install-macos   # 打包並安裝到 ~/Applications
+```
+
+有簽章憑證時設定 `AIBAR_SIGN_IDENTITY`（例如 `"Apple Development"`），重新建置後系統仍會認得是同一個 App；未設定時為 ad-hoc 簽章。
+
 ## 資料與隱私
 
-- AIBar 只**讀取** CLI 的憑證檔，絕不修改；token 只存在記憶體中。
-- 自己寫入的檔案都在 `%APPDATA%\AiBar\`：
+- AIBar 只**讀取** CLI 的憑證，絕不修改；token 只存在記憶體中。
+- 自己寫入的檔案都在 `%APPDATA%\AiBar\`（macOS 為 `~/Library/Application Support/AIBar/`，OpenRouter API key 改存 Keychain，沒有 `secrets.bin`）：
 
   | 檔案 | 內容 |
   | --- | --- |
@@ -92,9 +111,9 @@ Windows 系統匣的 AI 訂閱用量小工具。不用開網頁或 CLI，看一�
 
 ## 開發
 
-- 技術：Rust + [Slint](https://slint.dev/)（UI 與系統托盤）、`ureq`（HTTP）、`windows` crate（Win32 與 WinRT）。
+- 技術：Rust + [Slint](https://slint.dev/)（UI 與系統托盤）、`ureq`（HTTP）、`windows` crate（Win32 與 WinRT）、`objc2`（AppKit）。系統 API 集中在 `src/platform/`。
 - 規格書：[`docs/spec.md`](docs/spec.md)；名詞定義：[`CONTEXT.md`](CONTEXT.md)；架構決策：[`docs/adr/`](docs/adr/)。
-- 測試：`cargo test`；CI（GitHub Actions）另檢查 `cargo fmt --check` 與 `cargo clippy -- -D warnings`。
+- 測試：`cargo test`；CI（GitHub Actions）在 Windows 與 macOS 上另檢查 `cargo fmt --check` 與 `cargo clippy -- -D warnings`（本機可用 `just check`）。
 - 發布：更新 `Cargo.toml` 的 `version` 並 commit 後，推送同版本的標籤（例如 `git tag -a v0.2.0 -m "v0.2.0"`、`git push origin v0.2.0`），Release workflow 會自動建置並附上 exe、zip 與檢查碼。
 - 每個服務的端點細節集中在 `src/providers/<服務>.rs`，端點改版時只需修改一個檔案。
 
