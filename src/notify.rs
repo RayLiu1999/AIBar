@@ -177,7 +177,7 @@ mod tests {
         };
         let alerts = n.check(&[&first, &second], now);
         let titles: Vec<&str> = alerts.iter().map(|a| a.title.as_str()).collect();
-        assert_eq!(titles, ["Codex 每週 已用 82%", "Codex・工作 每週 已用 82%"]);
+        assert_eq!(titles, ["Codex 每週 已用 82%", "Codex · 工作 每週 已用 82%"]);
         assert!(n.check(&[&first, &second], now).is_empty());
     }
 }

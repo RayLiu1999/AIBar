@@ -418,13 +418,13 @@ pub fn tab(provider_id: &str) -> TabData {
     }
 }
 
-/// 憑證組的標題：「OpenRouter」或「OpenRouter・工作」
+/// 憑證組的標題：「OpenRouter」或「OpenRouter · 工作」
 pub fn title(s: &ProviderStatus) -> String {
     let name = provider_meta(s.provider_id).name;
     if s.group_name.is_empty() {
         name.to_string()
     } else {
-        format!("{name}・{}", s.group_name)
+        format!("{name} · {}", s.group_name)
     }
 }
 
@@ -919,15 +919,15 @@ mod tests {
         };
         let a = group("openrouter", "個人", 30.0, Some(FetchFailure::Network));
         let b = group("openrouter#x", "工作", 80.0, None);
-        assert_eq!(title(&b), "OpenRouter・工作");
+        assert_eq!(title(&b), "OpenRouter · 工作");
         assert_eq!(title(&status("openrouter", None, None)), "OpenRouter");
         let focus = tightest_group(&[&a, &b], now).unwrap();
         assert_eq!(focus.group_id, "openrouter#x");
         let t = tray_view(Some(focus), &[&a, &b], now);
         assert_eq!(t.text, "20");
-        assert!(t.tooltip.starts_with("OpenRouter・工作・儲值餘額 剩 20%"));
+        assert!(t.tooltip.starts_with("OpenRouter · 工作・儲值餘額 剩 20%"));
         assert!(t.warn, "另一組失敗也要警示");
-        assert!(overview_headline(&[&a, &b], now).contains("OpenRouter・工作"));
+        assert!(overview_headline(&[&a, &b], now).contains("OpenRouter · 工作"));
         // 都沒有資料時取第一組
         let (c, d) = (status("codex", None, None), status("codex", None, None));
         assert!(std::ptr::eq(tightest_group(&[&c, &d], now).unwrap(), &c));
