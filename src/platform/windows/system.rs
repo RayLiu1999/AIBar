@@ -1,4 +1,4 @@
-//! Windows 系統功能：單一執行個體、複製到剪貼簿、以預設瀏覽器開啟網址。
+//! 系統功能：單一執行個體、複製到剪貼簿、以預設瀏覽器開啟網址。
 
 use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError, GlobalFree, HANDLE, HGLOBAL};
 use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData};
