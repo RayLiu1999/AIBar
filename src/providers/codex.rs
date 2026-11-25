@@ -13,8 +13,9 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde_json::Value;
 
-use super::{UsageProvider, account_hash, get_json, home_dir, read_json_file, window_name_from_seconds};
+use super::{UsageProvider, account_hash, get_json, read_json_file, window_name_from_seconds};
 use crate::model::{FetchFailure, ResetBank, Snapshot, UsageWindow};
+use crate::platform::home_dir;
 
 const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
 /// 保留重置的明細（每一筆的狀態與到期時間）

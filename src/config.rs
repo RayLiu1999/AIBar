@@ -5,6 +5,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::platform::app_dir;
+
 /// 所有已知的 Provider（預設順序）。尚未實作的也列出，設定視窗會顯示為「即將推出」。
 pub const KNOWN_PROVIDERS: [&str; 5] = ["claude", "codex", "antigravity", "commandcode", "openrouter"];
 
@@ -119,11 +121,6 @@ impl Config {
             self.providers.swap(i, j as usize);
         }
     }
-}
-
-/// AIBar 自己的資料夾：`%APPDATA%\AiBar`
-pub fn app_dir() -> Option<PathBuf> {
-    std::env::var_os("APPDATA").map(|d| PathBuf::from(d).join("AiBar"))
 }
 
 fn path() -> Option<PathBuf> {

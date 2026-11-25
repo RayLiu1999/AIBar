@@ -8,8 +8,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{app_dir, write_atomic};
+use crate::config::write_atomic;
 use crate::model::{Credits, ResetBank, Snapshot, UsageWindow};
+use crate::platform::app_dir;
 
 const FILE_NAME: &str = "snapshots.json";
 const VERSION: u32 = 1;

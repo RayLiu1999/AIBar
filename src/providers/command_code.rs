@@ -14,8 +14,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 
-use super::{UsageProvider, account_hash, get_json, home_dir, read_json_file};
+use super::{UsageProvider, account_hash, get_json, read_json_file};
 use crate::model::{Credits, FetchFailure, Snapshot, UsageWindow};
+use crate::platform::home_dir;
 
 const BASE: &str = "https://api.commandcode.ai";
 const FIVE_HOURS: u64 = 5 * 3600;

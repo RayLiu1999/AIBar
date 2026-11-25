@@ -20,7 +20,7 @@ pub fn write(line: &str) {
         return;
     }
 
-    let Some(dir) = crate::config::app_dir() else { return };
+    let Some(dir) = crate::platform::app_dir() else { return };
     let _guard = LOCK.lock();
     let path = dir.join(FILE_NAME);
     if std::fs::metadata(&path).is_ok_and(|m| m.len() > MAX_SIZE) {

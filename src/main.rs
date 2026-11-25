@@ -8,10 +8,8 @@
 
 #[macro_use]
 mod applog;
-mod autostart;
 mod config;
 mod icon_art;
-mod main_window;
 mod model;
 mod notify;
 mod platform;
@@ -19,7 +17,6 @@ mod providers;
 mod scheduler;
 mod secret;
 mod snapshot_store;
-mod tray_icon;
 mod view;
 
 use std::cell::RefCell;
@@ -30,8 +27,8 @@ use std::time::{Duration, SystemTime};
 use slint::{ComponentHandle, ModelRc, VecModel};
 
 use config::{Config, OverviewLayout};
-use main_window::MainWindowHost;
 use model::ProviderStatus;
+use platform::{MainWindowHost, TrayActions, TrayHost};
 use scheduler::Scheduler;
 use view::DisplayMode;
 
@@ -43,7 +40,7 @@ const UI_TICK: Duration = Duration::from_secs(30);
 const SETTINGS_PAGE_ABOUT: i32 = 3;
 
 struct App {
-    tray: Tray,
+    tray: TrayHost,
     window: Rc<MainWindowHost>,
     settings: RefCell<Option<SettingsWindow>>,
     scheduler: Scheduler,
@@ -90,7 +87,7 @@ impl App {
         let enabled: Vec<&ProviderStatus> = statuses.iter().filter(|s| ids.contains(&s.provider_id)).collect();
         for alert in self.notifier.borrow_mut().check(&enabled, SystemTime::now()) {
             log!("[通知] {}", alert.title);
-            notify::show(&alert.title, &alert.body);
+            platform::toast::show(&alert.title, &alert.body);
         }
     }
 
@@ -115,8 +112,7 @@ impl App {
         };
 
         let tray = view::tray_view(focus, &enabled, now);
-        self.tray.set_tray_icon(tray_icon::make_tray(&tray));
-        self.tray.set_tray_tooltip(tray.tooltip.into());
+        self.tray.set(&tray);
 
         let display = self.config.borrow().display;
         let ui = self.window.ui();
@@ -196,7 +192,7 @@ impl App {
             DisplayMode::Remaining => 0,
             DisplayMode::Used => 1,
         });
-        w.set_autostart(autostart::is_enabled());
+        w.set_autostart(platform::autostart::is_enabled());
         w.set_notifications(cfg.notifications);
     }
 
@@ -206,7 +202,7 @@ impl App {
                 Ok(w) => {
                     w.set_version(env!("CARGO_PKG_VERSION").into());
                     w.on_autostart_toggled(|on| {
-                        autostart::set_enabled(on);
+                        platform::autostart::set_enabled(on);
                         with_app(|app| app.render_settings())();
                     });
                     w.on_display_changed(|index| {
@@ -271,13 +267,7 @@ impl App {
                 w.set_page(page);
             }
             let _ = w.show();
-            // 底層視窗要到下一輪事件迴圈才建立，第一次開啟時立刻設定圖示會沒有效果
-            let weak = w.as_weak();
-            slint::Timer::single_shot(main_window::FOCUS_DELAY, move || {
-                if let Some(w) = weak.upgrade() {
-                    tray_icon::apply_app_icon(w.window());
-                }
-            });
+            platform::after_show(w);
         }
     }
 }
@@ -345,8 +335,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // `--notify-test`：發一則測試通知，確認 Windows 通知設定沒有擋住 AIBar
     if args.iter().any(|a| a == "--notify-test") {
-        notify::init();
-        notify::show("AIBar 測試通知", "看到這則通知表示額度提醒可以正常運作");
+        platform::toast::init();
+        platform::toast::show("AIBar 測試通知", "看到這則通知表示額度提醒可以正常運作");
         std::thread::sleep(Duration::from_secs(1));
         return Ok(());
     }
@@ -356,12 +346,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     log!("AIBar {} 啟動", env!("CARGO_PKG_VERSION"));
-    notify::init();
+    platform::toast::init();
     // 正式版：開機自啟已開啟時，把登錄的路徑更新為目前的執行檔（exe 搬過位置也能正確自啟）。
     // 開發版不做，以免把 target\debug 的路徑寫進去。
     #[cfg(not(debug_assertions))]
-    if autostart::is_enabled() {
-        autostart::set_enabled(true);
+    if platform::autostart::is_enabled() {
+        platform::autostart::set_enabled(true);
     }
 
     slint::BackendSelector::new()
@@ -369,10 +359,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .renderer_name("software".into())
         .select()?;
 
-    let tray = Tray::new()?;
-    // 必須在建立任何視窗之前就設定圖示：Slint 1.18.1 的托盤只會嘗試建立一次，
-    // 若那時圖示還是空的就會失敗且不再重試（建立主視窗會觸發這次嘗試）
-    tray.set_tray_icon(tray_icon::make_tray(&view::tray_view(None, &[], SystemTime::now())));
+    // 必須在建立任何視窗之前（原因見 TrayHost::new）
+    let tray = TrayHost::new(&view::tray_view(None, &[], SystemTime::now()))?;
 
     // 讀取設定；首次啟動時憑證檔存在的 Provider 預設啟用
     let all = providers::all();
@@ -438,14 +426,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })()
     });
 
-    app.tray.on_left_clicked(with_app(|app| app.window.toggle()));
-    app.tray.on_refresh_now(with_app(|app| app.scheduler.refresh_now()));
-    app.tray.on_open_settings(with_app(|app| app.open_settings(None)));
-    app.tray
-        .on_show_about(with_app(|app| app.open_settings(Some(SETTINGS_PAGE_ABOUT))));
-    app.tray.on_quit(|| {
-        let _ = slint::quit_event_loop();
-    });
+    app.tray.connect(
+        &app.window,
+        TrayActions {
+            refresh: Box::new(with_app(|app| app.scheduler.refresh_now())),
+            settings: Box::new(with_app(|app| app.open_settings(None))),
+            about: Box::new(with_app(|app| app.open_settings(Some(SETTINGS_PAGE_ABOUT)))),
+            quit: Box::new(|| {
+                let _ = slint::quit_event_loop();
+            }),
+        },
+    );
 
     app.render();
     let tick = slint::Timer::default();

@@ -1,86 +1,19 @@
-//! Windows Toast 通知（規格書第 7 節）：額度視窗的已使用量跨過 80% 與 95% 時各通知一次，
-//! 該視窗重置後才會再次通知。
+//! 額度通知（規格書第 7 節）：額度視窗的已使用量跨過 80% 與 95% 時各通知一次，
+//! 該視窗重置後才會再次通知。實際顯示由 `platform::toast` 負責。
 //!
-//! 免安裝程式要發 Toast，需要一個 AppUserModelID：在
-//! `HKCU\Software\Classes\AppUserModelId\<AUMID>` 登錄顯示名稱與圖示（圖示寫成 PNG 放在
-//! `%APPDATA%\AiBar\icon.png`），再以 `SetCurrentProcessExplicitAppUserModelID` 讓本程式使用它。
-//! 已通知紀錄存於 `%APPDATA%\AiBar\notified.json`，重開機不重複通知。
+//! 已通知紀錄存於 `notified.json`，重開機不重複通知。
 
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use windows::Data::Xml::Dom::XmlDocument;
-use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
-use windows::Win32::System::Registry::{HKEY_CURRENT_USER, REG_SZ, RegSetKeyValueW};
-use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
-use windows::core::{HSTRING, PCWSTR};
-
-use crate::config::{app_dir, write_atomic, write_atomic_bytes};
-use crate::icon_art;
+use crate::config::write_atomic;
 use crate::model::ProviderStatus;
+use crate::platform::app_dir;
 use crate::view;
 
-const AUMID: &str = "RayLiu.AIBar";
 const STATE_FILE: &str = "notified.json";
 /// 已使用量門檻（%）：跨過時通知
 const THRESHOLDS: [f64; 2] = [80.0, 95.0];
-
-fn wide(s: &str) -> Vec<u16> {
-    s.encode_utf16().chain(std::iter::once(0)).collect()
-}
-
-fn set_reg_string(key: &str, name: &str, value: &str) {
-    let (k, n, v) = (wide(key), wide(name), wide(value));
-    let _ = unsafe {
-        RegSetKeyValueW(
-            HKEY_CURRENT_USER,
-            PCWSTR(k.as_ptr()),
-            PCWSTR(n.as_ptr()),
-            REG_SZ.0,
-            Some(v.as_ptr() as *const core::ffi::c_void),
-            (v.len() * 2) as u32,
-        )
-    };
-}
-
-/// 登錄 AppUserModelID 並套用到本程式（啟動時呼叫一次）
-pub fn init() {
-    let icon = app_dir().map(|d| d.join("icon.png"));
-    if let Some(path) = &icon {
-        let _ = write_atomic_bytes("icon.png", &icon_art::png(&icon_art::app_icon(256)));
-        let key = format!(r"Software\Classes\AppUserModelId\{AUMID}");
-        set_reg_string(&key, "DisplayName", "AIBar");
-        set_reg_string(&key, "IconUri", &path.display().to_string());
-    }
-    if let Err(e) = unsafe { SetCurrentProcessExplicitAppUserModelID(&HSTRING::from(AUMID)) } {
-        log!("[通知] 無法設定 AppUserModelID：{e}");
-    }
-}
-
-fn escape_xml(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
-/// 顯示一則 Toast
-pub fn show(title: &str, body: &str) {
-    let xml = format!(
-        "<toast><visual><binding template=\"ToastGeneric\"><text>{}</text><text>{}</text></binding></visual></toast>",
-        escape_xml(title),
-        escape_xml(body)
-    );
-    let result = (|| -> windows::core::Result<()> {
-        let doc = XmlDocument::new()?;
-        doc.LoadXml(&HSTRING::from(xml))?;
-        let toast = ToastNotification::CreateToastNotification(&doc)?;
-        ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(AUMID))?.Show(&toast)
-    })();
-    if let Err(e) = result {
-        log!("[通知] 無法顯示 Toast：{e}");
-    }
-}
 
 /// 一則待發的通知
 #[derive(Debug, PartialEq)]

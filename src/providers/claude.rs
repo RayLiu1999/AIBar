@@ -14,8 +14,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 
-use super::{UsageProvider, account_hash, get_json, home_dir, read_json_file};
+use super::{UsageProvider, account_hash, get_json, read_json_file};
 use crate::model::{FetchFailure, ResetBank, Snapshot, UsageWindow};
+use crate::platform::home_dir;
 
 /// `cedar_ember=1` 讓回應帶出保留重置（`cedar_ember` 區塊）
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage?cedar_ember=1";
