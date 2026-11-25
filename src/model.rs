@@ -12,6 +12,10 @@ pub struct Snapshot {
     pub windows: Vec<UsageWindow>,
     /// 以金額計的額度（Command Code、OpenRouter）；沒有時為 None
     pub credits: Option<Credits>,
+    /// 儲值所屬帳戶的雜湊（OpenRouter），用來認出同帳戶的多把 key；不明時為 None
+    pub funds_account: Option<String>,
+    /// 這把 API key 自己的花費（OpenRouter）；沒有時為 None
+    pub key_spend: Option<KeySpend>,
     /// 保留重置（Claude、Codex）；服務沒有提供或一次都沒有時為 None
     pub resets: Option<ResetBank>,
     pub fetched_at: SystemTime,
@@ -54,10 +58,19 @@ pub struct Credits {
     pub limit: f64,
 }
 
+/// Key 花費：單一 API key 花掉的金額（美元）。今日、本週（週一起）、本月以 UTC 計
+#[derive(Clone, Debug, PartialEq)]
+pub struct KeySpend {
+    pub total: f64,
+    pub month: f64,
+    pub week: f64,
+    pub day: f64,
+}
+
 /// 額度視窗：一段計量期間與其用量百分比
 #[derive(Clone, Debug)]
 pub struct UsageWindow {
-    /// 例如「5 小時」「每週」「每週・Fable」
+    /// 例如「5 小時」「每週」「每週 · Fable」
     pub name: String,
     /// 0.0–100.0
     pub used_percent: f64,
@@ -85,10 +98,23 @@ pub enum FetchFailure {
     AccessDenied,
 }
 
-/// 排程器交給 UI 的每個 Provider 狀態
+/// 憑證組：某個 Provider 底下一份可獨立取得用量的憑證，有使用者自訂的名稱。
+/// 第一組的 id 就是 Provider id（沿用既有的快照、機密與通知紀錄），其餘為「Provider id#識別碼」
+#[derive(Clone, Debug, PartialEq)]
+pub struct GroupSpec {
+    pub provider_id: &'static str,
+    pub id: String,
+    /// 空字串表示未命名
+    pub name: String,
+    pub enabled: bool,
+}
+
+/// 排程器交給 UI 的每個憑證組狀態
 #[derive(Clone, Debug)]
 pub struct ProviderStatus {
     pub provider_id: &'static str,
+    pub group_id: String,
+    pub group_name: String,
     pub snapshot: Option<Snapshot>,
     /// 最近一次刷新成功時為 None
     pub last_failure: Option<FetchFailure>,

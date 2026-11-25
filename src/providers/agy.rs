@@ -70,6 +70,8 @@ pub fn fetch(exe: &Path) -> Result<Snapshot, FetchFailure> {
         account_hash: account_hash(""),
         windows: parse_report(&report)?,
         credits: None,
+        funds_account: None,
+        key_spend: None,
         resets: None,
         fetched_at: SystemTime::now(),
     })
@@ -202,7 +204,7 @@ mod tests {
         let w = parse_report(&v).unwrap();
         let names: Vec<&str> = w.iter().map(|x| x.name.as_str()).collect();
         // 回應先列每週，顯示時組內改為 5 小時在前
-        assert_eq!(names, ["Gemini・5 小時", "Gemini・每週", "Gemini 4 Argon Weekly"]);
+        assert_eq!(names, ["Gemini · 5 小時", "Gemini · 每週", "Gemini 4 Argon Weekly"]);
         assert_eq!(w[0].window_secs, Some(18000));
         assert!((w[1].used_percent - 11.84).abs() < 1e-6);
         assert!(w[2].resets_at.is_some());

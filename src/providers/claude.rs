@@ -122,6 +122,8 @@ impl UsageProvider for Claude {
             account_hash: account_hash(&org),
             windows,
             credits: None,
+            funds_account: None,
+            key_spend: None,
             resets: parse_resets(&body["cedar_ember"], now),
             fetched_at: now,
         })
@@ -240,7 +242,7 @@ fn parse_usage(v: &Value) -> Option<Vec<UsageWindow>> {
 }
 
 /// `limits` 陣列中的一筆：`session` →「5 小時」、`weekly_all` →「每週」、
-/// `weekly_scoped` →「每週・{模型}」；未知的 kind 以原字串命名
+/// `weekly_scoped` →「每週 · {模型}」；未知的 kind 以原字串命名
 fn parse_limit(l: &Value) -> Option<UsageWindow> {
     let kind = l["kind"].as_str()?;
     // 視窗長度由 kind 推得：session 為 5 小時、weekly_* 為 7 天
@@ -253,7 +255,7 @@ fn parse_limit(l: &Value) -> Option<UsageWindow> {
         "session" => "5 小時".to_string(),
         "weekly_all" => "每週".to_string(),
         "weekly_scoped" => match l["scope"]["model"]["display_name"].as_str() {
-            Some(model) => format!("每週・{model}"),
+            Some(model) => format!("每週 · {model}"),
             None => "每週（指定模型）".to_string(),
         },
         other => other.to_string(),
@@ -328,7 +330,7 @@ mod tests {
         });
         let w = parse_usage(&v).unwrap();
         let names: Vec<&str> = w.iter().map(|x| x.name.as_str()).collect();
-        assert_eq!(names, ["5 小時", "每週", "每週・Fable", "something_new"]);
+        assert_eq!(names, ["5 小時", "每週", "每週 · Fable", "something_new"]);
         assert_eq!(w[0].used_percent, 61.0);
         assert!(w[0].resets_at.is_some());
         assert!(w[1].resets_at.is_none());
