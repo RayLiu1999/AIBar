@@ -71,7 +71,11 @@ pub fn provider_meta(id: &str) -> ProviderMeta {
             cli: "",
             mono: "O",
             accent: [0x8C, 0x9E, 0xF5],
-            source: "設定中輸入的 API key（DPAPI 加密）",
+            source: if crate::platform::IS_MACOS {
+                "設定中輸入的 API key（存在 Keychain）"
+            } else {
+                "設定中輸入的 API key（DPAPI 加密）"
+            },
             usage_url: "https://openrouter.ai/settings/credits",
         },
         _ => ProviderMeta {

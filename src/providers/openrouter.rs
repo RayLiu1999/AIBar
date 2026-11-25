@@ -1,4 +1,4 @@
-//! OpenRouter：以使用者在設定視窗輸入的 API key 查詢額度（key 以 DPAPI 加密存放，見 secret.rs）。
+//! OpenRouter：以使用者在設定視窗輸入的 API key 查詢額度（key 由作業系統加密保存，見 secret.rs）。
 //!
 //! - `GET https://openrouter.ai/api/v1/key`：此 key 的花費上限 `limit`、剩餘 `limit_remaining`、
 //!   重置週期 `limit_reset`（daily／weekly／monthly／null，UTC 午夜；週為週一起算）

@@ -34,6 +34,7 @@ objc2-foundation = "0.3.2"
 objc2-quartz-core = "0.3.2"
 objc2-service-management = "0.3.2"
 objc2-user-notifications = "0.3.2"
+security-framework = "3.7"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = [
