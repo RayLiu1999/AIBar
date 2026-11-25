@@ -13,7 +13,7 @@ pub mod toast;
 mod tray;
 
 pub use main_window::{MainWindowHost, after_show};
-pub use paths::{AGY_EXE, agy_dirs, antigravity_dir, app_dir, home_dir};
+pub use paths::{AGY_EXE, agy_dirs, antigravity_dir, app_dir, home_dir, no_browser};
 pub use system::{acquire_single_instance, copy_to_clipboard, open_url, prepare};
 pub use tray::TrayHost;
 
