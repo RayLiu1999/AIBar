@@ -38,10 +38,11 @@ pub fn find() -> Option<PathBuf> {
         let p = PathBuf::from(p);
         return p.is_file().then_some(p);
     }
-    let path = std::env::var_os("PATH").unwrap_or_default();
+    // PATH 未設定時不可改用空字串：空路徑會變成在目前目錄尋找
+    let path = std::env::var_os("PATH");
     agy_dirs()
         .into_iter()
-        .chain(std::env::split_paths(&path))
+        .chain(path.iter().flat_map(std::env::split_paths))
         .map(|d| d.join(AGY_EXE))
         .find(|p| p.is_file())
 }
