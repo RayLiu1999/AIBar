@@ -6,7 +6,7 @@
 //!
 //! - agy 1.2.2 起本機 HTTPS 服務需要拿不到的 CSRF token，因此只用報告模式。
 //! - 1.1.11 以前沒有非互動的用量報告，`/usage` 可能被當成提示送給模型，一律不執行。
-//! - 執行檔：`ANTIGRAVITY_CLI_PATH`（有設定時只用它）→ `%LOCALAPPDATA%\agy\bin\agy.exe` → PATH 中的 `agy.exe`。
+//! - 執行檔：`ANTIGRAVITY_CLI_PATH`（有設定時只用它）→ 預設安裝資料夾 → PATH。
 //! - 環境：`AGY_CLI_DISABLE_AUTO_UPDATE=true`（不觸發自動更新）、`BROWSER` 指向不存在的程式（不跳出瀏覽器登入）。
 //! - 不顯示主控台視窗；行程樹放進 Job Object，結束或逾時時一併終止（agy 會啟動自己的 language server）。
 //! - 工作目錄為 `%TEMP%\AiBar-agy`；輸出上限 1 MB、逾時 100 秒。
@@ -31,6 +31,7 @@ use windows::core::PCWSTR;
 
 use super::{PROBE, account_hash, antigravity::parse_summary, print_shape};
 use crate::model::{FetchFailure, Snapshot};
+use crate::platform::{AGY_EXE, agy_dirs};
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// 第一個有非互動用量報告的版本
@@ -45,15 +46,12 @@ pub fn find() -> Option<PathBuf> {
         let p = PathBuf::from(p);
         return p.is_file().then_some(p);
     }
-    let default = std::env::var_os("LOCALAPPDATA")
-        .map(|d| PathBuf::from(d).join("agy").join("bin").join("agy.exe"))
-        .filter(|p| p.is_file());
-    default.or_else(|| {
-        let paths = std::env::var_os("PATH")?;
-        std::env::split_paths(&paths)
-            .map(|d| d.join("agy.exe"))
-            .find(|p| p.is_file())
-    })
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    agy_dirs()
+        .into_iter()
+        .chain(std::env::split_paths(&path))
+        .map(|d| d.join(AGY_EXE))
+        .find(|p| p.is_file())
 }
 
 /// 以 agy 的用量報告取得額度

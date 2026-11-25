@@ -11,14 +11,13 @@
 //! App 沒開時改用 agy CLI（見 `agy` 模組）；兩者都沒有時回報「未執行」（不視為錯誤）。
 //! 做法參考 CodexBar 的 Antigravity 文件。
 
-use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 
 use super::{UsageProvider, account_hash, agy, post_json_local};
 use crate::model::{FetchFailure, Snapshot, UsageWindow};
-use crate::platform::process;
+use crate::platform::{antigravity_dir, process};
 
 const SERVICE: &str = "exa.language_server_pb.LanguageServerService";
 
@@ -35,10 +34,6 @@ struct Server {
     ide: bool,
 }
 
-fn install_dir() -> Option<PathBuf> {
-    std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("Programs").join("Antigravity"))
-}
-
 impl UsageProvider for Antigravity {
     fn id(&self) -> &'static str {
         "antigravity"
@@ -46,7 +41,7 @@ impl UsageProvider for Antigravity {
 
     /// 有安裝 Antigravity App 或 agy CLI 即視為可用（首次啟動時預設啟用）
     fn credentials_present(&self) -> bool {
-        install_dir().is_some_and(|d| d.exists()) || agy::find().is_some()
+        antigravity_dir().is_some_and(|d| d.exists()) || agy::find().is_some()
     }
 
     /// 帳號只能在 App 執行時問 language server，離線無法判斷

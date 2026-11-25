@@ -11,3 +11,19 @@ pub fn app_dir() -> Option<PathBuf> {
 pub fn home_dir() -> Option<PathBuf> {
     std::env::var_os("USERPROFILE").map(PathBuf::from)
 }
+
+/// Antigravity App 的安裝位置
+pub fn antigravity_dir() -> Option<PathBuf> {
+    std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("Programs").join("Antigravity"))
+}
+
+/// agy CLI 的執行檔名
+pub const AGY_EXE: &str = "agy.exe";
+
+/// agy CLI 的預設安裝資料夾（先於 PATH 尋找）
+pub fn agy_dirs() -> Vec<PathBuf> {
+    std::env::var_os("LOCALAPPDATA")
+        .map(|d| PathBuf::from(d).join("agy").join("bin"))
+        .into_iter()
+        .collect()
+}
