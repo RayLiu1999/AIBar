@@ -434,6 +434,7 @@ AIBar/
     ├── notify.rs             // 通知門檻與已通知紀錄
     ├── platform/             // 平台功能的唯一入口；依作業系統轉出同名函式
     │   ├── mod.rs
+    │   ├── macos/              // 同名的 macOS 實作；另有 status_item 圖示與 claude_keychain
     │   └── windows/
     │       ├── system.rs       // 單一執行個體、剪貼簿、開啟網址
     │       ├── paths.rs        // AIBar、家目錄、Antigravity、agy 的位置
