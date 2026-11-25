@@ -22,19 +22,24 @@ pub struct Alert {
     pub body: String,
 }
 
-/// 已通知紀錄：鍵為「Provider|額度視窗|重置時間」，值為已通知到的門檻數（1 = 80%、2 = 95%）
+/// 已通知紀錄：鍵為「憑證組|額度視窗|重置時間」，值為已通知到的門檻數（1 = 80%、2 = 95%）
 #[derive(Default)]
 pub struct Notifier {
     sent: HashMap<String, usize>,
 }
 
+/// 讀取已通知紀錄；舊版的視窗名稱以「・」分隔，換成現在的寫法以免重複通知
+fn parse(text: &str) -> HashMap<String, usize> {
+    let sent: HashMap<String, usize> = serde_json::from_str(text).unwrap_or_default();
+    sent.into_iter().map(|(k, v)| (k.replace('・', " · "), v)).collect()
+}
+
 impl Notifier {
     pub fn load() -> Self {
-        let sent = app_dir()
-            .and_then(|d| std::fs::read_to_string(d.join(STATE_FILE)).ok())
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default();
-        Self { sent }
+        let text = app_dir().and_then(|d| std::fs::read_to_string(d.join(STATE_FILE)).ok());
+        Self {
+            sent: text.map(|t| parse(&t)).unwrap_or_default(),
+        }
     }
 
     fn save(&self) {
@@ -64,7 +69,7 @@ impl Notifier {
 
         for s in statuses {
             let Some(snap) = &s.snapshot else { continue };
-            let name = view::provider_meta(s.provider_id).name;
+            let name = view::title(s);
             for w in &snap.windows {
                 let used = view::used_percent(w, now);
                 let level = THRESHOLDS.iter().filter(|t| used >= **t).count();
@@ -75,7 +80,7 @@ impl Notifier {
                     .resets_at
                     .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
                     .map_or(0, |d| d.as_secs());
-                let key = format!("{}|{}|{reset}", s.provider_id, w.name);
+                let key = format!("{}|{}|{reset}", s.group_id, w.name);
                 let sent = self.sent.get(&key).copied().unwrap_or(0);
                 if level > sent {
                     self.sent.insert(key, level);
@@ -108,6 +113,8 @@ mod tests {
     fn status(used: f64, reset_in: u64, now: SystemTime) -> ProviderStatus {
         ProviderStatus {
             provider_id: "codex",
+            group_id: "codex".into(),
+            group_name: String::new(),
             snapshot: Some(Snapshot {
                 plan: None,
                 account_hash: String::new(),
@@ -118,6 +125,8 @@ mod tests {
                     window_secs: None,
                 }],
                 credits: None,
+                funds_account: None,
+                key_spend: None,
                 resets: None,
                 fetched_at: now,
             }),
@@ -160,5 +169,28 @@ mod tests {
         let now = UNIX_EPOCH + Duration::from_secs(1_800_000_000);
         let mut n = Notifier::default();
         assert_eq!(check(&mut n, &status(97.0, 3600, now), now).len(), 1);
+    }
+
+    #[test]
+    fn 舊版紀錄的名稱() {
+        let sent = parse(r#"{"claude|每週・Fable|1800003600":1}"#);
+        assert_eq!(sent.get("claude|每週 · Fable|1800003600"), Some(&1));
+        assert!(parse("壞掉").is_empty());
+    }
+
+    #[test]
+    fn 各組分開通知() {
+        let now = UNIX_EPOCH + Duration::from_secs(1_800_000_000);
+        let mut n = Notifier::default();
+        let first = status(82.0, 3600, now);
+        let second = ProviderStatus {
+            group_id: "codex#a".into(),
+            group_name: "工作".into(),
+            ..first.clone()
+        };
+        let alerts = n.check(&[&first, &second], now);
+        let titles: Vec<&str> = alerts.iter().map(|a| a.title.as_str()).collect();
+        assert_eq!(titles, ["Codex 每週 已用 82%", "Codex · 工作 每週 已用 82%"]);
+        assert!(n.check(&[&first, &second], now).is_empty());
     }
 }

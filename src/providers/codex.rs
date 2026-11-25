@@ -93,6 +93,8 @@ impl UsageProvider for Codex {
             account_hash: account_hash(account_id),
             windows,
             credits: None,
+            funds_account: None,
+            key_spend: None,
             resets,
             fetched_at: now,
         })
@@ -145,7 +147,7 @@ fn parse_window(w: &Value, suffix: Option<&str>) -> Option<UsageWindow> {
     let base = window_name_from_seconds(secs);
     Some(UsageWindow {
         name: match suffix {
-            Some(s) => format!("{base}・{s}"),
+            Some(s) => format!("{base} · {s}"),
             None => base,
         },
         used_percent: w["used_percent"].as_f64()?,
@@ -220,7 +222,7 @@ mod tests {
             ]
         });
         let w = parse_usage(&v).unwrap();
-        assert_eq!(w[1].name, "每週・codex_review");
+        assert_eq!(w[1].name, "每週 · codex_review");
     }
 
     #[test]

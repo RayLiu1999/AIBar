@@ -1,6 +1,6 @@
 //! 使用者資料夾的位置。
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// AIBar 自己的資料夾：`%APPDATA%\AiBar`
 pub fn app_dir() -> Option<PathBuf> {
@@ -26,4 +26,9 @@ pub fn agy_dirs() -> Vec<PathBuf> {
         .map(|d| PathBuf::from(d).join("agy").join("bin"))
         .into_iter()
         .collect()
+}
+
+/// 給 `BROWSER` 用、不存在的程式（不跳出瀏覽器登入）
+pub fn no_browser(work_dir: &Path) -> PathBuf {
+    work_dir.join("no-browser.exe")
 }

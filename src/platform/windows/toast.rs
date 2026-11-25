@@ -11,7 +11,7 @@ use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
 use windows::core::{HSTRING, PCWSTR};
 
 use super::app_dir;
-use crate::config::write_atomic_bytes;
+use crate::config::write_atomic;
 use crate::icon_art;
 
 const AUMID: &str = "RayLiu.AIBar";
@@ -38,7 +38,7 @@ fn set_reg_string(key: &str, name: &str, value: &str) {
 pub fn init() {
     let icon = app_dir().map(|d| d.join("icon.png"));
     if let Some(path) = &icon {
-        let _ = write_atomic_bytes("icon.png", &icon_art::png(&icon_art::app_icon(256)));
+        let _ = write_atomic("icon.png", icon_art::png(&icon_art::app_icon(256)));
         let key = format!(r"Software\Classes\AppUserModelId\{AUMID}");
         set_reg_string(&key, "DisplayName", "AIBar");
         set_reg_string(&key, "IconUri", &path.display().to_string());
@@ -71,4 +71,10 @@ pub fn show(title: &str, body: &str) {
     if let Err(e) = result {
         log!("[通知] 無法顯示 Toast：{e}");
     }
+}
+
+/// 發一則測試通知；等待系統收下後才返回
+pub fn show_test(title: &str, body: &str) {
+    show(title, body);
+    std::thread::sleep(std::time::Duration::from_secs(1));
 }

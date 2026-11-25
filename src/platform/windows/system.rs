@@ -9,6 +9,9 @@ use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::core::{HSTRING, w};
 
+/// 啟動時的準備（Windows 不需要）
+pub fn prepare() {}
+
 /// 取得單一執行個體鎖（具名 Mutex，範圍為目前登入工作階段）。
 /// 已有另一份 AIBar 持有時回傳 false。鎖在程式結束時由系統釋放。
 pub fn acquire_single_instance() -> bool {

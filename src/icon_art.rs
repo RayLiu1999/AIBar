@@ -66,6 +66,7 @@ impl Canvas {
 }
 
 /// App 圖示：深色圓角方塊內三根由低到高、分別為 Provider 代表色的長條
+#[allow(dead_code)] // macOS 的程式本體不用，只在打包時產生 .icns
 pub fn app_icon(size: u32) -> Canvas {
     let s = size as f32;
     let k = s / 32.0; // 以 32×32 的設計稿座標縮放

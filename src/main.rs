@@ -27,7 +27,7 @@ use std::time::{Duration, SystemTime};
 use slint::{ComponentHandle, ModelRc, VecModel};
 
 use config::{Config, OverviewLayout};
-use model::ProviderStatus;
+use model::{FetchFailure, GroupSpec, ProviderStatus};
 use platform::{MainWindowHost, TrayActions, TrayHost};
 use scheduler::Scheduler;
 use view::DisplayMode;
@@ -38,6 +38,7 @@ slint::include_modules!();
 const UI_TICK: Duration = Duration::from_secs(30);
 /// 設定視窗的分頁
 const SETTINGS_PAGE_ABOUT: i32 = 3;
+const SAVE_FAILED: &str = "無法儲存 API key，詳見日誌";
 
 struct App {
     tray: TrayHost,
@@ -50,6 +51,8 @@ struct App {
     /// 排程器送來的最新狀態（含停用的 Provider）
     statuses: RefCell<Vec<ProviderStatus>>,
     notifier: RefCell<notify::Notifier>,
+    /// 設定視窗目前顯示的 Provider 與憑證組，用來判斷是否需要重建
+    settings_rows: RefCell<Vec<(ProviderSetting, Vec<GroupSetting>)>>,
 }
 
 thread_local! {
@@ -62,12 +65,33 @@ impl App {
         config::save(&self.config.borrow());
     }
 
-    /// 已啟用且已實作的 Provider id，依顯示順序
+    /// 已實作的 Provider 的所有憑證組（含停用的），依顯示順序
+    fn groups(&self) -> Vec<GroupSpec> {
+        self.config.borrow().group_specs(&self.available)
+    }
+
+    /// 至少有一組啟用的 Provider id，依顯示順序
     fn enabled_ids(&self) -> Vec<&'static str> {
-        let cfg = self.config.borrow();
-        let mut ids: Vec<&'static str> = self.available.iter().copied().filter(|id| cfg.is_enabled(id)).collect();
-        ids.sort_by_key(|id| cfg.order_of(id));
+        let mut ids: Vec<&'static str> = Vec::new();
+        for g in self.groups().into_iter().filter(|g| g.enabled) {
+            if !ids.contains(&g.provider_id) {
+                ids.push(g.provider_id);
+            }
+        }
         ids
+    }
+
+    /// 啟用的憑證組的狀態，依顯示順序；同帳戶的儲值只留一份
+    fn enabled_statuses(&self) -> Vec<ProviderStatus> {
+        let statuses = self.statuses.borrow();
+        let mut enabled: Vec<ProviderStatus> = self
+            .groups()
+            .iter()
+            .filter(|g| g.enabled)
+            .filter_map(|g| statuses.iter().find(|s| s.group_id == g.id).cloned())
+            .collect();
+        view::share_account_funds(&mut enabled);
+        enabled
     }
 
     fn set_statuses(&self, statuses: Vec<ProviderStatus>) {
@@ -77,14 +101,13 @@ impl App {
         self.check_notifications();
     }
 
-    /// 額度跨過 80%／95% 時發 Toast（設定中可關閉）
+    /// 額度跨過 80%／95% 時發通知（設定中可關閉）
     fn check_notifications(&self) {
         if !self.config.borrow().notifications {
             return;
         }
-        let ids = self.enabled_ids();
-        let statuses = self.statuses.borrow();
-        let enabled: Vec<&ProviderStatus> = statuses.iter().filter(|s| ids.contains(&s.provider_id)).collect();
+        let statuses = self.enabled_statuses();
+        let enabled: Vec<&ProviderStatus> = statuses.iter().collect();
         for alert in self.notifier.borrow_mut().check(&enabled, SystemTime::now()) {
             log!("[通知] {}", alert.title);
             platform::toast::show(&alert.title, &alert.body);
@@ -95,21 +118,17 @@ impl App {
     fn render(&self) {
         let now = SystemTime::now();
         let ids = self.enabled_ids();
-        let statuses = self.statuses.borrow();
-        // 啟用的 Provider，依顯示順序
-        let enabled: Vec<&ProviderStatus> = ids
-            .iter()
-            .filter_map(|id| statuses.iter().find(|s| s.provider_id == *id))
-            .collect();
+        let statuses = self.enabled_statuses();
+        let enabled: Vec<&ProviderStatus> = statuses.iter().collect();
 
         // 選到的 Provider 已停用時退回總覽
         let selected = self.config.borrow().selected_tab.clone();
-        let tab_index = enabled.iter().position(|s| s.provider_id == selected).map(|i| i + 1);
-        // 焦點 Provider：總覽時為排序第一個，否則為該頁籤
-        let focus = match tab_index {
-            Some(i) => enabled.get(i - 1).copied(),
-            None => enabled.first().copied(),
-        };
+        let tab_index = ids.iter().position(|id| *id == selected).map(|i| i + 1);
+        // 焦點 Provider：總覽時為排序第一個，否則為該頁籤；有多組時以剩餘最少的一組代表
+        let focus_id = ids.get(tab_index.unwrap_or(1) - 1).copied().unwrap_or_default();
+        let focus_groups: Vec<&ProviderStatus> =
+            enabled.iter().copied().filter(|s| s.provider_id == focus_id).collect();
+        let focus = view::tightest_group(&focus_groups, now);
 
         let tray = view::tray_view(focus, &enabled, now);
         self.tray.set(&tray);
@@ -118,11 +137,20 @@ impl App {
         let ui = self.window.ui();
         ui.set_headline(view::overview_headline(&enabled, now).into());
         ui.set_selected_tab(tab_index.unwrap_or(0) as i32);
+        ui.set_tabs(ModelRc::new(VecModel::from(
+            ids.iter().map(|id| view::tab(id)).collect::<Vec<_>>(),
+        )));
+        // Provider 頁籤列出該 Provider 的每一組
+        let detail: Vec<CardData> = match tab_index {
+            Some(_) => focus_groups.iter().map(|s| view::card(s, display, now)).collect(),
+            None => Vec::new(),
+        };
+        ui.set_detail_cards(ModelRc::new(VecModel::from(detail)));
         self.window
             .set_cards(enabled.iter().map(|s| view::card(s, display, now)).collect());
     }
 
-    /// 頁籤切換：0 為總覽，n 為第 n 個啟用的 Provider
+    /// 頁籤切換：0 為總覽，n 為第 n 個頁籤的 Provider
     fn select_tab(&self, index: i32) {
         let id = match self.enabled_ids().get((index - 1).max(0) as usize) {
             Some(id) if index > 0 => id.to_string(),
@@ -135,7 +163,7 @@ impl App {
 
     /// 啟用狀態改變：通知排程器、重畫、存檔
     fn apply_enabled(&self) {
-        self.scheduler.set_enabled(self.enabled_ids());
+        self.scheduler.set_groups(self.groups());
         self.save_config();
         self.render();
         self.render_settings();
@@ -154,12 +182,138 @@ impl App {
             .map(|p| format!(" · {p}"))
             .unwrap_or_default();
         match (id, present) {
-            ("openrouter", true) => format!("已設定 API key{plan}"),
-            ("openrouter", false) => "尚未設定 API key：在下方貼上後按儲存".into(),
+            ("openrouter", _) => match self.stored_groups(id) {
+                0 => "尚未設定 API key：按「新增一組」貼上".into(),
+                n => format!("已設定 {n} 組 API key"),
+            },
             ("antigravity", true) => format!("已安裝 Antigravity，App 開啟時讀取{plan}"),
             ("antigravity", false) => "找不到 Antigravity".into(),
             (_, true) => format!("已偵測到 {} 登入{plan}", tool_name(id)),
             (_, false) => format!("找不到 {} 登入，請先在終端機執行 {}", tool_name(id), meta.cli),
+        }
+    }
+
+    /// 已存有 API key 的組數
+    fn stored_groups(&self, provider: &str) -> usize {
+        self.groups()
+            .iter()
+            .filter(|g| g.provider_id == provider && secret::has(&g.id))
+            .count()
+    }
+
+    /// 設定視窗中某個 Provider 的憑證組
+    fn group_rows(&self, p: &config::ProviderEntry) -> Vec<GroupSetting> {
+        let statuses = self.statuses.borrow();
+        let groups = p.all_groups();
+        let many = groups.len() > 1;
+        groups
+            .into_iter()
+            // 隱含的第一組沒有 API key 時不列出
+            .filter(|g| !p.groups.is_empty() || secret::has(&g.id))
+            .map(|g| {
+                let status = statuses.iter().find(|s| s.group_id == g.id);
+                let failure = status.and_then(|s| s.last_failure.as_ref());
+                let plan = status.and_then(|s| s.snapshot.as_ref()?.plan.as_deref());
+                GroupSetting {
+                    title: match (g.name.is_empty(), many) {
+                        (false, _) => g.name.as_str().into(),
+                        (true, true) => "未命名".into(),
+                        (true, false) => "API key".into(),
+                    },
+                    status: match (secret::has(&g.id), failure, plan) {
+                        (false, ..) => "讀不到 API key，請按「編輯」重新輸入".into(),
+                        (_, Some(FetchFailure::TokenExpired), _) if g.enabled => {
+                            "API key 無效或已撤銷，請按「編輯」重新輸入".into()
+                        }
+                        (_, Some(f), _) if g.enabled => view::failure_text(f, &p.id).into(),
+                        (_, _, Some(plan)) => format!("已儲存 · {plan}").into(),
+                        _ => "已儲存".into(),
+                    },
+                    name: g.name.into(),
+                    id: g.id.into(),
+                    enabled: g.enabled,
+                }
+            })
+            .collect()
+    }
+
+    /// 新增（`group` 為空）或修改一組憑證；成功時關閉編輯表單，失敗時顯示原因
+    fn save_group(&self, provider: &str, group: &str, name: &str, key: &str) {
+        let key = key.trim();
+        let result = if group.is_empty() {
+            self.add_group(provider, name, key)
+        } else {
+            self.edit_group(group, name, key)
+        };
+        if let Some(w) = self.settings.borrow().as_ref() {
+            match result {
+                Ok(()) => w.invoke_edit("".into(), "".into()),
+                Err(reason) => w.set_edit_error(reason.into()),
+            }
+        }
+        self.render_settings();
+    }
+
+    fn add_group(&self, provider: &str, name: &str, key: &str) -> Result<(), &'static str> {
+        if key.is_empty() {
+            return Err("請貼上 API key");
+        }
+        let existing: Vec<GroupSpec> = self
+            .groups()
+            .into_iter()
+            .filter(|g| g.provider_id == provider)
+            .collect();
+        let Some(available) = self.available.iter().find(|id| **id == provider) else {
+            return Err(SAVE_FAILED);
+        };
+        let has_first = secret::has(provider);
+        let implicit = existing.len() == 1 && existing[0].id == *available && existing[0].name.is_empty();
+        // 還沒有任何憑證時沿用 Provider id，與單組的舊資料相容
+        let id = if implicit && !has_first {
+            provider.to_string()
+        } else {
+            new_group_id(provider)
+        };
+        let mut name = config::clean_group_name(name);
+        if name.is_empty() && id != provider {
+            name = format!("第 {} 組", existing.len() + 1);
+        }
+        if !secret::set(&id, Some(key)) {
+            return Err(SAVE_FAILED);
+        }
+        // 沿用的組可能還留著舊憑證的快照；要在啟用之前清掉
+        self.scheduler.reset(&id);
+        self.config.borrow_mut().add_group(provider, &id, &name, has_first);
+        self.apply_enabled();
+        Ok(())
+    }
+
+    /// 改名；`key` 不為空時一併更換 API key
+    fn edit_group(&self, group: &str, name: &str, key: &str) -> Result<(), &'static str> {
+        if !key.is_empty() {
+            if !secret::set(group, Some(key)) {
+                return Err(SAVE_FAILED);
+            }
+            self.scheduler.reset(group);
+        }
+        self.config.borrow_mut().rename_group(group, name);
+        self.apply_enabled();
+        Ok(())
+    }
+
+    fn delete_group(&self, group: &str) {
+        if !secret::set(group, None) {
+            if let Some(w) = self.settings.borrow().as_ref() {
+                w.set_edit_error("無法刪除 API key，詳見日誌".into());
+            }
+            return;
+        }
+        self.config.borrow_mut().remove_group(group);
+        self.apply_enabled();
+        // 最後一組移除後會剩下同 id 的隱含組，清掉它的快照
+        self.scheduler.reset(group);
+        if let Some(w) = self.settings.borrow().as_ref() {
+            w.invoke_edit("".into(), "".into());
         }
     }
 
@@ -168,13 +322,13 @@ impl App {
         let settings = self.settings.borrow();
         let Some(w) = settings.as_ref() else { return };
         let cfg = self.config.borrow().clone();
-        let rows: Vec<ProviderSetting> = cfg
+        let rows: Vec<(ProviderSetting, Vec<GroupSetting>)> = cfg
             .providers
             .iter()
             .map(|p| {
                 let meta = view::provider_meta(&p.id);
                 let available = self.available.contains(&p.id.as_str());
-                ProviderSetting {
+                let row = ProviderSetting {
                     id: p.id.as_str().into(),
                     name: meta.name.into(),
                     mono: meta.mono.into(),
@@ -183,11 +337,24 @@ impl App {
                     enabled: p.enabled && available,
                     available,
                     needs_key: p.id == providers::openrouter::ID,
-                    has_key: p.id == providers::openrouter::ID && secret::has(&p.id),
-                }
+                    groups: ModelRc::default(),
+                };
+                let groups = if row.needs_key { self.group_rows(p) } else { Vec::new() };
+                (row, groups)
             })
             .collect();
-        w.set_providers(ModelRc::new(VecModel::from(rows)));
+        // 內容沒變就不重建，避免輸入框失去焦點
+        if *self.settings_rows.borrow() != rows {
+            let model: Vec<ProviderSetting> = rows
+                .iter()
+                .map(|(row, groups)| ProviderSetting {
+                    groups: ModelRc::new(VecModel::from(groups.clone())),
+                    ..row.clone()
+                })
+                .collect();
+            w.set_providers(ModelRc::new(VecModel::from(model)));
+            *self.settings_rows.borrow_mut() = rows;
+        }
         w.set_display_index(match cfg.display {
             DisplayMode::Remaining => 0,
             DisplayMode::Used => 1,
@@ -201,6 +368,7 @@ impl App {
             match SettingsWindow::new() {
                 Ok(w) => {
                     w.set_version(env!("CARGO_PKG_VERSION").into());
+                    w.set_macos(platform::IS_MACOS);
                     w.on_autostart_toggled(|on| {
                         platform::autostart::set_enabled(on);
                         with_app(|app| app.render_settings())();
@@ -228,25 +396,20 @@ impl App {
                             app.apply_enabled();
                         })();
                     });
-                    // 儲存 API key 後自動啟用並立即刷新
-                    w.on_key_saved(|id, key| {
-                        let (id, key) = (id.to_string(), key.to_string());
-                        with_app(move |app| {
-                            if secret::set(&id, Some(&key)) {
-                                app.config.borrow_mut().set_enabled(&id, true);
-                                app.apply_enabled();
-                                app.scheduler.refresh_now();
-                            }
-                        })();
+                    w.on_group_saved(|provider, group, name, key| {
+                        let args = [provider, group, name, key].map(|s| s.to_string());
+                        defer(move |app| {
+                            let [provider, group, name, key] = &args;
+                            app.save_group(provider, group, name, key);
+                        });
                     });
-                    w.on_key_cleared(|id| {
-                        let id = id.to_string();
-                        with_app(move |app| {
-                            secret::set(&id, None);
-                            app.config.borrow_mut().set_enabled(&id, false);
+                    w.on_group_toggled(|group, on| {
+                        defer(move |app| {
+                            app.config.borrow_mut().set_group_enabled(&group, on);
                             app.apply_enabled();
-                        })();
+                        });
                     });
+                    w.on_group_deleted(|group| defer(move |app| app.delete_group(&group)));
                     w.on_notifications_toggled(|on| {
                         with_app(move |app| {
                             app.config.borrow_mut().notifications = on;
@@ -266,10 +429,22 @@ impl App {
             if let Some(page) = page {
                 w.set_page(page);
             }
+            // 上次沒存的輸入（可能含 API key）不留著
+            if !w.window().is_visible() {
+                w.invoke_edit("".into(), "".into());
+            }
             let _ = w.show();
             platform::after_show(w);
         }
     }
+}
+
+/// 新憑證組的 id；以時間產生，刪除後不會重複使用
+fn new_group_id(provider: &str) -> String {
+    let nanos = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    format!("{provider}#{nanos:x}")
 }
 
 /// 設定視窗中用來描述登入來源的工具名稱
@@ -291,16 +466,30 @@ fn with_app(f: impl Fn(Rc<App>) + 'static) -> impl Fn() + 'static {
     }
 }
 
+/// 在下一輪事件迴圈執行：設定列的回呼當中不可重建該列
+fn defer(f: impl Fn(Rc<App>) + 'static) {
+    slint::Timer::single_shot(Duration::ZERO, with_app(f));
+}
+
 /// `--probe [id]`：對每個（或指定的）Provider 抓取一次並印出結果
 fn probe(only: Option<&str>) {
     providers::PROBE.store(true, Ordering::Relaxed);
-    for p in providers::all()
+    // 有多組 API key 的 Provider 逐組查詢
+    let targets = providers::all()
         .into_iter()
         .filter(|p| only.is_none_or(|id| p.id() == id))
-    {
+        .flat_map(|p| {
+            let mut ids = secret::ids(p.id());
+            if ids.is_empty() {
+                ids.push(p.id().to_string());
+            }
+            ids.into_iter()
+                .filter_map(move |id| Some((providers::for_group(p.id(), &id)?, id)))
+                .collect::<Vec<_>>()
+        });
+    for (p, id) in targets {
         eprintln!(
-            "== {}（憑證檔{}）",
-            p.id(),
+            "== {id}（憑證{}）",
             if p.credentials_present() { "存在" } else { "不存在" }
         );
         match p.fetch() {
@@ -313,6 +502,9 @@ fn probe(only: Option<&str>) {
                         w.used_percent,
                         view::reset_text(w, SystemTime::now())
                     );
+                }
+                if let Some(k) = &s.key_spend {
+                    eprintln!("  {} · {}", view::key_spend_text(k), view::key_spend_detail(k));
                 }
                 if let Some(r) = &s.resets {
                     let now = SystemTime::now();
@@ -328,16 +520,16 @@ fn probe(only: Option<&str>) {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    platform::prepare();
     let args: Vec<String> = std::env::args().collect();
     if let Some(i) = args.iter().position(|a| a == "--probe") {
         probe(args.get(i + 1).map(String::as_str));
         return Ok(());
     }
-    // `--notify-test`：發一則測試通知，確認 Windows 通知設定沒有擋住 AIBar
+    // `--notify-test`：發一則測試通知，確認系統的通知設定沒有擋住 AIBar
     if args.iter().any(|a| a == "--notify-test") {
         platform::toast::init();
-        platform::toast::show("AIBar 測試通知", "看到這則通知表示額度提醒可以正常運作");
-        std::thread::sleep(Duration::from_secs(1));
+        platform::toast::show_test("AIBar 測試通知", "看到這則通知表示額度提醒可以正常運作");
         return Ok(());
     }
 
@@ -347,12 +539,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     log!("AIBar {} 啟動", env!("CARGO_PKG_VERSION"));
     platform::toast::init();
-    // 正式版：開機自啟已開啟時，把登錄的路徑更新為目前的執行檔（exe 搬過位置也能正確自啟）。
-    // 開發版不做，以免把 target\debug 的路徑寫進去。
-    #[cfg(not(debug_assertions))]
-    if platform::autostart::is_enabled() {
-        platform::autostart::set_enabled(true);
-    }
+    platform::autostart::refresh();
 
     slint::BackendSelector::new()
         .backend_name("winit".into())
@@ -367,15 +554,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let available: Vec<&'static str> = all.iter().map(|p| p.id()).collect();
     let detected: Vec<&str> = all.iter().filter(|p| p.credentials_present()).map(|p| p.id()).collect();
     let cfg = config::load(&detected);
-    let enabled: Vec<&'static str> = available.iter().copied().filter(|id| cfg.is_enabled(id)).collect();
+    let groups = cfg.group_specs(&available);
 
     // 上次存下的快照；帳號已更換的捨棄
     let snapshots = snapshot_store::keep_matching(snapshot_store::load(), |id| {
-        all.iter().find(|p| p.id() == id)?.current_account_hash()
+        let g = groups.iter().find(|g| g.id == id)?;
+        providers::for_group(g.provider_id, &g.id)?.current_account_hash()
     });
 
     // 排程器在背景執行緒，結果送回 UI 執行緒交給 App
-    let scheduler = scheduler::spawn(all, enabled, snapshots, |statuses| {
+    let factory = Box::new(|g: &GroupSpec| providers::for_group(g.provider_id, &g.id));
+    let scheduler = scheduler::spawn(factory, groups.clone(), snapshots, |statuses| {
         let _ = slint::invoke_from_event_loop(move || {
             if let Some(app) = APP.with(|a| a.borrow().upgrade()) {
                 app.set_statuses(statuses);
@@ -403,6 +592,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         available,
         statuses: RefCell::default(),
         notifier: RefCell::new(notify::Notifier::load()),
+        settings_rows: RefCell::default(),
     });
     APP.with(|a| *a.borrow_mut() = Rc::downgrade(&app));
 

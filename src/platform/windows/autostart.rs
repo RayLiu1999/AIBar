@@ -84,3 +84,11 @@ pub fn set_enabled(enabled: bool) -> bool {
         _ => true,
     }
 }
+
+/// 已開啟時，把登錄的路徑更新為目前的執行檔（exe 搬過位置也能正確自啟）。
+/// 開發版不做，以免把 target\debug 的路徑寫進去。
+pub fn refresh() {
+    if !cfg!(debug_assertions) && is_enabled() {
+        set_enabled(true);
+    }
+}

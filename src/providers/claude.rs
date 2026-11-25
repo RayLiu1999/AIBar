@@ -1,22 +1,22 @@
 //! Claude（訂閱）：借用 Claude Code 已登入的 OAuth token 查詢用量。
 //!
-//! - 憑證：`%USERPROFILE%\.claude\.credentials.json` 的 `claudeAiOauth`
-//!   （設定 `CLAUDE_CONFIG_DIR` 時改讀該目錄）
-//! - 帳號識別：`%USERPROFILE%\.claude.json` 的 `oauthAccount.organizationUuid`
+//! - 憑證：`~/.claude/.credentials.json` 的 `claudeAiOauth`（設定 `CLAUDE_CONFIG_DIR` 時改讀該目錄）；
+//!   沒有檔案時改讀作業系統的憑證儲存（macOS 的 Keychain）
+//! - 帳號識別：`~/.claude.json` 的 `oauthAccount.organizationUuid`
 //! - 端點：`GET https://api.anthropic.com/api/oauth/usage`
 //!
-//! 只讀取憑證檔，絕不寫入；token 過期時不自行 refresh（ADR-0001）。
+//! 只讀取憑證，絕不寫入；token 過期時不自行 refresh（ADR-0001）。
 //! 此端點限流嚴格且以帳號計（其他裝置或工具查詢同一帳號也算），
 //! 背景刷新間隔不可短於預設的 10 分鐘。
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 
 use super::{UsageProvider, account_hash, get_json, read_json_file};
 use crate::model::{FetchFailure, ResetBank, Snapshot, UsageWindow};
-use crate::platform::home_dir;
+use crate::platform::{self, SecretRead, home_dir};
 
 /// `cedar_ember=1` 讓回應帶出保留重置（`cedar_ember` 區塊）
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage?cedar_ember=1";
@@ -47,13 +47,33 @@ fn profile_path() -> Option<PathBuf> {
     }
 }
 
+/// 設定 `CLAUDE_CONFIG_DIR` 時 Keychain 的項目可能屬於別的帳號，只讀該目錄的檔案
+fn uses_keychain() -> bool {
+    std::env::var_os("CLAUDE_CONFIG_DIR").is_none()
+}
+
+/// 取得 `claudeAiOauth`：先讀檔案，沒有檔案才讀 Keychain。
+/// 同一份內容可能還有其他服務的 token（`mcpOAuth`），只取需要的部分。
+fn load_oauth(path: &Path, keychain: impl FnOnce() -> SecretRead) -> Result<Value, FetchFailure> {
+    let mut creds = if path.exists() {
+        read_json_file(path)?
+    } else {
+        match keychain() {
+            SecretRead::Found(data) => serde_json::from_slice(&data).map_err(|_| FetchFailure::NotLoggedIn)?,
+            SecretRead::Missing => return Err(FetchFailure::NotLoggedIn),
+            SecretRead::Denied => return Err(FetchFailure::AccessDenied),
+        }
+    };
+    Ok(creds["claudeAiOauth"].take())
+}
+
 impl UsageProvider for Claude {
     fn id(&self) -> &'static str {
         "claude"
     }
 
     fn credentials_present(&self) -> bool {
-        credentials_path().is_some_and(|p| p.exists())
+        credentials_path().is_some_and(|p| p.exists()) || (uses_keychain() && platform::claude_keychain::present())
     }
 
     fn current_account_hash(&self) -> Option<String> {
@@ -62,8 +82,10 @@ impl UsageProvider for Claude {
 
     fn fetch(&self) -> Result<Snapshot, FetchFailure> {
         let path = credentials_path().ok_or(FetchFailure::NotLoggedIn)?;
-        let creds = read_json_file(&path)?;
-        let oauth = &creds["claudeAiOauth"];
+        let oauth = &load_oauth(&path, || match uses_keychain() {
+            true => platform::claude_keychain::read(),
+            false => SecretRead::Missing,
+        })?;
         let token = oauth["accessToken"].as_str().ok_or(FetchFailure::NotLoggedIn)?;
 
         // 到期時間已過就不發送請求（expiresAt 為毫秒）
@@ -100,6 +122,8 @@ impl UsageProvider for Claude {
             account_hash: account_hash(&org),
             windows,
             credits: None,
+            funds_account: None,
+            key_spend: None,
             resets: parse_resets(&body["cedar_ember"], now),
             fetched_at: now,
         })
@@ -218,7 +242,7 @@ fn parse_usage(v: &Value) -> Option<Vec<UsageWindow>> {
 }
 
 /// `limits` 陣列中的一筆：`session` →「5 小時」、`weekly_all` →「每週」、
-/// `weekly_scoped` →「每週・{模型}」；未知的 kind 以原字串命名
+/// `weekly_scoped` →「每週 · {模型}」；未知的 kind 以原字串命名
 fn parse_limit(l: &Value) -> Option<UsageWindow> {
     let kind = l["kind"].as_str()?;
     // 視窗長度由 kind 推得：session 為 5 小時、weekly_* 為 7 天
@@ -231,7 +255,7 @@ fn parse_limit(l: &Value) -> Option<UsageWindow> {
         "session" => "5 小時".to_string(),
         "weekly_all" => "每週".to_string(),
         "weekly_scoped" => match l["scope"]["model"]["display_name"].as_str() {
-            Some(model) => format!("每週・{model}"),
+            Some(model) => format!("每週 · {model}"),
             None => "每週（指定模型）".to_string(),
         },
         other => other.to_string(),
@@ -248,6 +272,33 @@ fn parse_limit(l: &Value) -> Option<UsageWindow> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn 憑證來源() {
+        let missing = Path::new("/nonexistent/aibar-test/.credentials.json");
+        let json = br#"{"claudeAiOauth":{"accessToken":"t"},"mcpOAuth":{"x":"y"}}"#;
+        let oauth = load_oauth(missing, || SecretRead::Found(json.to_vec())).unwrap();
+        assert_eq!(oauth["accessToken"], "t");
+        assert!(oauth.get("mcpOAuth").is_none());
+        assert!(matches!(
+            load_oauth(missing, || SecretRead::Missing),
+            Err(FetchFailure::NotLoggedIn)
+        ));
+        assert!(matches!(
+            load_oauth(missing, || SecretRead::Denied),
+            Err(FetchFailure::AccessDenied)
+        ));
+        assert!(matches!(
+            load_oauth(missing, || SecretRead::Found(b"not json".to_vec())),
+            Err(FetchFailure::NotLoggedIn)
+        ));
+        // 有檔案時不讀 Keychain
+        let file = std::env::temp_dir().join(format!("aibar-test-{}.json", std::process::id()));
+        std::fs::write(&file, json).unwrap();
+        let result = load_oauth(&file, || panic!("不應讀取 Keychain"));
+        std::fs::remove_file(&file).unwrap();
+        assert_eq!(result.unwrap()["accessToken"], "t");
+    }
 
     #[test]
     fn 方案名稱() {
@@ -279,7 +330,7 @@ mod tests {
         });
         let w = parse_usage(&v).unwrap();
         let names: Vec<&str> = w.iter().map(|x| x.name.as_str()).collect();
-        assert_eq!(names, ["5 小時", "每週", "每週・Fable", "something_new"]);
+        assert_eq!(names, ["5 小時", "每週", "每週 · Fable", "something_new"]);
         assert_eq!(w[0].used_percent, 61.0);
         assert!(w[0].resets_at.is_some());
         assert!(w[1].resets_at.is_none());

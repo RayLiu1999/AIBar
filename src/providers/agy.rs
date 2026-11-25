@@ -7,9 +7,9 @@
 //! - agy 1.2.2 起本機 HTTPS 服務需要拿不到的 CSRF token，因此只用報告模式。
 //! - 1.1.11 以前沒有非互動的用量報告，`/usage` 可能被當成提示送給模型，一律不執行。
 //! - 執行檔：`ANTIGRAVITY_CLI_PATH`（有設定時只用它）→ 預設安裝資料夾 → PATH。
-//! - 環境：`AGY_CLI_DISABLE_AUTO_UPDATE=true`（不觸發自動更新）、`BROWSER` 指向不存在的程式（不跳出瀏覽器登入）。
+//! - 環境：`AGY_CLI_DISABLE_AUTO_UPDATE=true`（不觸發自動更新）、`BROWSER` 指向不會開瀏覽器的程式（不跳出登入）。
 //! - 不顯示主控台視窗；結束或逾時時終止整個行程樹（agy 會啟動自己的 language server）。
-//! - 工作目錄為 `%TEMP%\AiBar-agy`；輸出上限 1 MB、逾時 100 秒。
+//! - 工作目錄為暫存資料夾下的 `AiBar-agy`；輸出上限 1 MB、逾時 100 秒。
 //!
 //! 做法參考 CodexBar 的 Antigravity 文件與實作。
 
@@ -24,7 +24,7 @@ use serde_json::Value;
 use super::{PROBE, account_hash, antigravity::parse_summary, print_shape};
 use crate::model::{FetchFailure, Snapshot};
 use crate::platform::process_tree::{self, ProcessTree};
-use crate::platform::{AGY_EXE, agy_dirs};
+use crate::platform::{AGY_EXE, agy_dirs, no_browser};
 
 /// 第一個有非互動用量報告的版本
 const MIN_VERSION: (u32, u32, u32) = (1, 1, 11);
@@ -70,6 +70,8 @@ pub fn fetch(exe: &Path) -> Result<Snapshot, FetchFailure> {
         account_hash: account_hash(""),
         windows: parse_report(&report)?,
         credits: None,
+        funds_account: None,
+        key_spend: None,
         resets: None,
         fetched_at: SystemTime::now(),
     })
@@ -127,7 +129,7 @@ fn run(exe: &Path, args: &[&str], timeout: Duration) -> Result<Vec<u8>, FetchFai
         .args(args)
         .current_dir(&dir)
         .env("AGY_CLI_DISABLE_AUTO_UPDATE", "true")
-        .env("BROWSER", dir.join("no-browser.exe"))
+        .env("BROWSER", no_browser(&dir))
         .env_remove("ELECTRON_RUN_AS_NODE")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -202,7 +204,7 @@ mod tests {
         let w = parse_report(&v).unwrap();
         let names: Vec<&str> = w.iter().map(|x| x.name.as_str()).collect();
         // 回應先列每週，顯示時組內改為 5 小時在前
-        assert_eq!(names, ["Gemini・5 小時", "Gemini・每週", "Gemini 4 Argon Weekly"]);
+        assert_eq!(names, ["Gemini · 5 小時", "Gemini · 每週", "Gemini 4 Argon Weekly"]);
         assert_eq!(w[0].window_secs, Some(18000));
         assert!((w[1].used_percent - 11.84).abs() < 1e-6);
         assert!(w[2].resets_at.is_some());

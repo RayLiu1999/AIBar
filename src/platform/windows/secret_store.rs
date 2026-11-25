@@ -7,7 +7,7 @@ use windows::Win32::Security::Cryptography::{
 };
 
 use super::app_dir;
-use crate::config::write_atomic_bytes;
+use crate::config::write_atomic;
 
 const FILE_NAME: &str = "secrets.bin";
 
@@ -73,7 +73,7 @@ pub fn store(plain: &[u8]) -> bool {
         log!("[機密] DPAPI 加密失敗");
         return false;
     };
-    match write_atomic_bytes(FILE_NAME, &cipher) {
+    match write_atomic(FILE_NAME, &cipher) {
         Ok(()) => true,
         Err(e) => {
             log!("[機密] 無法寫入 {FILE_NAME}：{e}");

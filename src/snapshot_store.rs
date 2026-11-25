@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::config::write_atomic;
-use crate::model::{Credits, ResetBank, Snapshot, UsageWindow};
+use crate::model::{Credits, KeySpend, ResetBank, Snapshot, UsageWindow};
 use crate::platform::app_dir;
 
 const FILE_NAME: &str = "snapshots.json";
@@ -34,9 +34,23 @@ struct StoredSnapshot {
     /// 金額型額度（美元）；舊版檔案沒有此欄位
     #[serde(default)]
     credits: Option<(f64, f64)>,
+    /// 儲值所屬帳戶的雜湊；舊版檔案沒有此欄位
+    #[serde(default)]
+    funds_account: Option<String>,
+    /// Key 花費（美元）；舊版檔案沒有此欄位
+    #[serde(default)]
+    key_spend: Option<StoredSpend>,
     /// 保留重置；舊版檔案沒有此欄位
     #[serde(default)]
     reset_bank: Option<StoredResets>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct StoredSpend {
+    total: f64,
+    month: f64,
+    week: f64,
+    day: f64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -77,6 +91,13 @@ impl From<&Snapshot> for StoredSnapshot {
                 })
                 .collect(),
             credits: s.credits.as_ref().map(|c| (c.used, c.limit)),
+            funds_account: s.funds_account.clone(),
+            key_spend: s.key_spend.as_ref().map(|k| StoredSpend {
+                total: k.total,
+                month: k.month,
+                week: k.week,
+                day: k.day,
+            }),
             reset_bank: s.resets.as_ref().map(|r| StoredResets {
                 expires: r.expires.iter().map(|t| t.map(to_secs)).collect(),
                 usable: r.usable,
@@ -95,13 +116,21 @@ impl From<StoredSnapshot> for Snapshot {
                 .windows
                 .into_iter()
                 .map(|w| UsageWindow {
-                    name: w.name,
+                    // 舊版以「・」分隔
+                    name: w.name.replace('・', " · "),
                     used_percent: w.used_percent,
                     resets_at: w.resets_at.map(from_secs),
                     window_secs: w.window_secs,
                 })
                 .collect(),
             credits: s.credits.map(|(used, limit)| Credits { used, limit }),
+            funds_account: s.funds_account,
+            key_spend: s.key_spend.map(|k| KeySpend {
+                total: k.total,
+                month: k.month,
+                week: k.week,
+                day: k.day,
+            }),
             resets: s
                 .reset_bank
                 .and_then(|r| ResetBank::new(r.expires.into_iter().map(|t| t.map(from_secs)).collect(), r.usable)),
@@ -137,7 +166,7 @@ pub fn load() -> HashMap<String, Snapshot> {
 
 /// 寫入所有快照（整個檔案覆寫）
 pub fn save<'a>(snapshots: impl IntoIterator<Item = (&'a str, &'a Snapshot)>) {
-    if let Err(e) = write_atomic(FILE_NAME, &serialize(snapshots)) {
+    if let Err(e) = write_atomic(FILE_NAME, serialize(snapshots)) {
         log!("[快照] 無法寫入 {FILE_NAME}：{e}");
     }
 }
@@ -178,8 +207,23 @@ mod tests {
                 used: 4.33,
                 limit: 10.0,
             }),
+            funds_account: Some("def".into()),
+            key_spend: Some(KeySpend {
+                total: 3.5,
+                month: 1.25,
+                week: 0.5,
+                day: 0.0,
+            }),
             resets: ResetBank::new(vec![Some(from_secs(1_795_132_800)), None], Some(0)),
         }
+    }
+
+    #[test]
+    fn 舊版的視窗名稱() {
+        let mut s = sample();
+        s.windows[0].name = "每週・Fable".into();
+        let back = parse(&serialize([("claude", &s)]));
+        assert_eq!(back["claude"].windows[0].name, "每週 · Fable");
     }
 
     #[test]
@@ -194,6 +238,8 @@ mod tests {
         assert_eq!(b.windows[0].resets_at, s.windows[0].resets_at);
         assert_eq!(b.windows[0].window_secs, Some(18000));
         assert_eq!(b.credits, s.credits);
+        assert_eq!(b.funds_account, s.funds_account);
+        assert_eq!(b.key_spend, s.key_spend);
         assert_eq!(b.resets, s.resets);
     }
 

@@ -6,8 +6,8 @@ use std::time::{Duration, SystemTime};
 use chrono::{DateTime, Datelike, Local, Timelike, Weekday};
 use slint::{Color, ModelRc, VecModel};
 
-use crate::model::{Credits, FetchFailure, ProviderStatus, ResetBank, Snapshot, UsageWindow};
-use crate::{CardData, UsageLevel, WindowRow};
+use crate::model::{Credits, FetchFailure, KeySpend, ProviderStatus, ResetBank, Snapshot, UsageWindow};
+use crate::{CardData, TabData, UsageLevel, WindowRow};
 
 /// 快照年齡超過此數個背景刷新間隔即為舊快照
 const STALE_CYCLES: u32 = 3;
@@ -71,7 +71,11 @@ pub fn provider_meta(id: &str) -> ProviderMeta {
             cli: "",
             mono: "O",
             accent: [0x8C, 0x9E, 0xF5],
-            source: "設定中輸入的 API key（DPAPI 加密）",
+            source: if crate::platform::IS_MACOS {
+                "設定中輸入的 API key（存在 Keychain）"
+            } else {
+                "設定中輸入的 API key（DPAPI 加密）"
+            },
             usage_url: "https://openrouter.ai/settings/credits",
         },
         _ => ProviderMeta {
@@ -272,22 +276,52 @@ fn failure_text_generic(f: &FetchFailure, cli: &str) -> String {
         FetchFailure::Network => "無法連線，下次排程將重試".into(),
         FetchFailure::BadResponse => "回應格式改變".into(),
         FetchFailure::NotRunning => "Antigravity 未執行（也找不到 agy CLI），開啟 App 後會自動更新".into(),
+        FetchFailure::AccessDenied => "無法讀取 Keychain（存取被拒），按「立即刷新」可重試".into(),
     }
 }
 
-/// 金額型額度文字：「本期已用 $4.33 / $10.00」；上限 0 表示無上限
-pub fn credits_text(c: &Credits) -> String {
+/// 金額型額度文字：「本期已用 $4.33 / $10.00」；上限 0 表示無上限。
+/// OpenRouter 的是整個帳戶的儲值，寫成「帳戶已用」以便和 Key 花費區分
+pub fn credits_text(c: &Credits, provider_id: &str) -> String {
+    let label = if provider_id == "openrouter" {
+        "帳戶已用"
+    } else {
+        "本期已用"
+    };
     if c.limit > 0.0 {
-        format!("本期已用 ${:.2} / ${:.2}", c.used, c.limit)
+        format!("{label} ${:.2} / ${:.2}", c.used, c.limit)
     } else {
         format!("本月已用 ${:.2}（無上限）", c.used)
     }
 }
 
+/// 金額：「$1.23」；不到一分錢時多顯示幾位，避免看起來像沒用過
+fn usd(v: f64) -> String {
+    if v <= 0.0 {
+        "$0.00".into()
+    } else if v < 0.0001 {
+        "<$0.0001".into()
+    } else if v < 0.01 {
+        format!("${v:.4}")
+    } else {
+        format!("${v:.2}")
+    }
+}
+
+/// Key 花費摘要：「此 key 已用 $1.23 · 本月 $0.17」
+pub fn key_spend_text(k: &KeySpend) -> String {
+    format!("此 key 已用 {} · 本月 {}", usd(k.total), usd(k.month))
+}
+
+/// Key 花費明細（Provider 頁籤）
+pub fn key_spend_detail(k: &KeySpend) -> String {
+    format!("今日 {} · 本週 {}（UTC）", usd(k.day), usd(k.week))
+}
+
 /// 最快到期的重置在這段時間內到期時，以警示色提醒
 const RESET_EXPIRY_SOON: Duration = Duration::from_secs(3 * 86400);
 
-/// 保留重置摘要：「已存 2 次重置・最快 11/20（五）08:00 到期」「可套用 1 次重置（共 2 次）」；
+/// 保留重置摘要：「已存 2 次重置 · 最快 11/20（五）08:00 到期」「可套用 1 次重置（共 2 次）」；
 /// 一次都沒有時為空字串
 pub fn resets_text(r: &ResetBank, now: SystemTime) -> String {
     let left = r.remaining(now);
@@ -301,8 +335,8 @@ pub fn resets_text(r: &ResetBank, now: SystemTime) -> String {
         _ => format!("已存 {n} 次重置"),
     };
     match left[0] {
-        Some(t) if n > 1 => format!("{count}・最快 {} 到期", absolute_time(t, now)),
-        Some(t) => format!("{count}・{} 到期", absolute_time(t, now)),
+        Some(t) if n > 1 => format!("{count} · 最快 {} 到期", absolute_time(t, now)),
+        Some(t) => format!("{count} · {} 到期", absolute_time(t, now)),
         None => count,
     }
 }
@@ -375,11 +409,70 @@ fn row(w: &UsageWindow, mode: DisplayMode, now: SystemTime) -> WindowRow {
     }
 }
 
-/// 一個 Provider 的卡片內容（總覽與 Provider 頁籤共用）
+/// Provider 頁籤
+pub fn tab(provider_id: &str) -> TabData {
+    let meta = provider_meta(provider_id);
+    TabData {
+        name: meta.name.into(),
+        accent: color(meta.accent),
+    }
+}
+
+/// 憑證組的標題：「OpenRouter」或「OpenRouter · 工作」
+pub fn title(s: &ProviderStatus) -> String {
+    let name = provider_meta(s.provider_id).name;
+    if s.group_name.is_empty() {
+        name.to_string()
+    } else {
+        format!("{name} · {}", s.group_name)
+    }
+}
+
+/// 有需要警示的失敗原因
+pub fn has_warning(s: &ProviderStatus) -> bool {
+    s.last_failure
+        .as_ref()
+        .is_some_and(|f| !matches!(f, FetchFailure::NotRunning))
+}
+
+/// 同帳戶的多組只留一份帳戶儲值（儲值餘額與帳戶已用），其餘只留 key 自己的資料。
+/// 留在第一個沒有失敗原因的組，免得停在舊數字；都失敗時留在第一組
+pub fn share_account_funds(statuses: &mut [ProviderStatus]) {
+    let account = |s: &ProviderStatus| Some((s.provider_id, s.snapshot.as_ref()?.funds_account.clone()?));
+    for i in 0..statuses.len() {
+        let Some(key) = account(&statuses[i]) else { continue };
+        let same = |s: &&ProviderStatus| account(s).as_ref() == Some(&key);
+        let holder = statuses
+            .iter()
+            .filter(same)
+            .find(|s| s.last_failure.is_none())
+            .or_else(|| statuses.iter().find(same))
+            .map(|s| s.group_id.clone());
+        if holder.as_deref() != Some(statuses[i].group_id.as_str())
+            && let Some(sn) = &mut statuses[i].snapshot
+        {
+            sn.credits = None;
+            sn.windows.retain(|w| w.name != crate::providers::openrouter::BALANCE);
+        }
+    }
+}
+
+/// 同一個 Provider 的多組中，代表托盤的那一組：剩餘最少的；都沒有資料時為第一組
+pub fn tightest_group<'a>(groups: &[&'a ProviderStatus], now: SystemTime) -> Option<&'a ProviderStatus> {
+    groups
+        .iter()
+        .filter_map(|s| Some((*s, tightest(s.snapshot.as_ref()?, now)?.1)))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(s, _)| s)
+        .or_else(|| groups.first().copied())
+}
+
+/// 一個憑證組的卡片內容（總覽與 Provider 頁籤共用）
 pub fn card(s: &ProviderStatus, mode: DisplayMode, now: SystemTime) -> CardData {
     let meta = provider_meta(s.provider_id);
     let snap = s.snapshot.as_ref();
     let resets = snap.and_then(|sn| sn.resets.as_ref());
+    let spend = snap.and_then(|sn| sn.key_spend.as_ref());
     let rows: Vec<WindowRow> = snap
         .map(|sn| sn.windows.iter().map(|w| row(w, mode, now)).collect())
         .unwrap_or_default();
@@ -395,8 +488,8 @@ pub fn card(s: &ProviderStatus, mode: DisplayMode, now: SystemTime) -> CardData 
         .map(|d| format!("約 {}後（{}）", duration_text(d), interval_text(s.refresh_interval)))
         .unwrap_or_else(|| interval_text(s.refresh_interval));
     CardData {
-        id: s.provider_id.into(),
-        name: meta.name.into(),
+        id: s.group_id.as_str().into(),
+        name: title(s).into(),
         mono: meta.mono.into(),
         accent: color(meta.accent),
         plan: snap.and_then(|sn| sn.plan.as_deref()).unwrap_or_default().into(),
@@ -422,9 +515,11 @@ pub fn card(s: &ProviderStatus, mode: DisplayMode, now: SystemTime) -> CardData 
         failure_cmd: failure_cmd.into(),
         credits_text: snap
             .and_then(|sn| sn.credits.as_ref())
-            .map(credits_text)
+            .map(|c| credits_text(c, s.provider_id))
             .unwrap_or_default()
             .into(),
+        spend_text: spend.map(key_spend_text).unwrap_or_default().into(),
+        spend_detail: spend.map(key_spend_detail).unwrap_or_default().into(),
         resets_text: resets.map(|r| resets_text(r, now)).unwrap_or_default().into(),
         resets_detail: resets
             .map(|r| resets_detail(r, s.provider_id, now))
@@ -444,7 +539,7 @@ pub fn overview_headline(statuses: &[&ProviderStatus], now: SystemTime) -> Strin
         .iter()
         .filter_map(|s| {
             let (w, r) = tightest(s.snapshot.as_ref()?, now)?;
-            Some((provider_meta(s.provider_id).name, w, r))
+            Some((title(s), w, r))
         })
         .min_by(|a, b| a.2.total_cmp(&b.2))
         .map(|(name, w, r)| format!("最先用完：{name} {}，剩 {r:.0}%", w.name))
@@ -460,7 +555,7 @@ pub enum TrayFill {
 }
 
 /// 托盤圖示與 Tooltip 的內容
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TrayView {
     /// 圖示中央的文字：剩餘百分比、「滿」或「–」
     pub text: String,
@@ -487,10 +582,12 @@ pub fn tray_view(focus: Option<&ProviderStatus>, enabled: &[&ProviderStatus], no
         };
     };
     let meta = provider_meta(focus.provider_id);
-    let warn = focus
-        .last_failure
-        .as_ref()
-        .is_some_and(|f| !matches!(f, FetchFailure::NotRunning));
+    let name = title(focus);
+    // 同一個 Provider 的任一組失敗都要看得出來
+    let warn = has_warning(focus)
+        || enabled
+            .iter()
+            .any(|s| s.provider_id == focus.provider_id && has_warning(s));
     let snap = focus.snapshot.as_ref();
     let top = snap.and_then(|s| tightest(s, now));
     let stale = snap.is_none_or(|s| is_stale(s, focus.refresh_interval, now));
@@ -516,25 +613,25 @@ pub fn tray_view(focus: Option<&ProviderStatus>, enabled: &[&ProviderStatus], no
         (Some((w, r)), _) => {
             let reset = reset_text(w, now);
             if reset.is_empty() {
-                format!("{}・{} 剩 {r:.0}%", meta.name, w.name)
+                format!("{name} · {} 剩 {r:.0}%", w.name)
             } else {
-                format!("{}・{} 剩 {r:.0}%・{reset}", meta.name, w.name)
+                format!("{name} · {} 剩 {r:.0}% · {reset}", w.name)
             }
         }
-        (None, Some(f)) => format!("{}・{}", meta.name, failure_text(f, focus.provider_id)),
-        (None, None) => format!("{}・讀取中", meta.name),
+        (None, Some(f)) => format!("{name} · {}", failure_text(f, focus.provider_id)),
+        (None, None) => format!("{name} · 讀取中"),
     }];
     // 其後每個啟用 Provider 一行
     if enabled.len() > 1 {
         for s in enabled {
-            let name = provider_meta(s.provider_id).name;
+            let name = title(s);
             let line = match &s.snapshot {
                 Some(sn) => sn
                     .windows
                     .iter()
                     .map(|w| format!("{} {:.0}%", w.name, remaining_percent(w, now)))
                     .collect::<Vec<_>>()
-                    .join("・"),
+                    .join("，"),
                 None => "無資料".into(),
             };
             lines.push(format!("{name}　{line}"));
@@ -583,6 +680,8 @@ mod tests {
             account_hash: String::new(),
             windows,
             credits: None,
+            funds_account: None,
+            key_spend: None,
             resets: None,
             fetched_at: now - Duration::from_secs(age_secs),
         }
@@ -591,6 +690,8 @@ mod tests {
     fn status(id: &'static str, snap: Option<Snapshot>, fail: Option<FetchFailure>) -> ProviderStatus {
         ProviderStatus {
             provider_id: id,
+            group_id: id.into(),
+            group_name: String::new(),
             snapshot: snap,
             last_failure: fail,
             refreshing: false,
@@ -604,16 +705,35 @@ mod tests {
         assert!(failure_text(&FetchFailure::TokenExpired, "codex").contains("codex"));
         assert!(failure_text(&FetchFailure::NotRunning, "antigravity").contains("未執行"));
         assert_eq!(
-            credits_text(&Credits {
-                used: 4.333,
-                limit: 10.0
-            }),
+            credits_text(
+                &Credits {
+                    used: 4.333,
+                    limit: 10.0
+                },
+                "commandcode"
+            ),
             "本期已用 $4.33 / $10.00"
         );
         assert_eq!(
-            credits_text(&Credits { used: 3.2, limit: 0.0 }),
+            credits_text(&Credits { used: 3.2, limit: 0.0 }, "commandcode"),
             "本月已用 $3.20（無上限）"
         );
+        assert_eq!(
+            credits_text(&Credits { used: 0.2, limit: 5.0 }, "openrouter"),
+            "帳戶已用 $0.20 / $5.00"
+        );
+    }
+
+    #[test]
+    fn key_花費文字() {
+        let k = KeySpend {
+            total: 1.234,
+            month: 0.0042,
+            week: 0.00001,
+            day: 0.0,
+        };
+        assert_eq!(key_spend_text(&k), "此 key 已用 $1.23 · 本月 $0.0042");
+        assert_eq!(key_spend_detail(&k), "今日 $0.00 · 本週 <$0.0001（UTC）");
     }
 
     #[test]
@@ -633,10 +753,10 @@ mod tests {
         // 有到期時間：摘要寫最快到期的那一次
         let b = bank(vec![in_days(20), in_days(10)], None);
         let soonest = absolute_time(in_days(10).unwrap(), now);
-        assert_eq!(resets_text(&b, now), format!("已存 2 次重置・最快 {soonest} 到期"));
+        assert_eq!(resets_text(&b, now), format!("已存 2 次重置 · 最快 {soonest} 到期"));
         assert!(!resets_expiring_soon(&b, now));
         let one = bank(vec![in_days(2)], None);
-        assert!(resets_text(&one, now).starts_with("已存 1 次重置・"));
+        assert!(resets_text(&one, now).starts_with("已存 1 次重置 · "));
         assert!(resets_expiring_soon(&one, now));
 
         // 已過期的不算
@@ -769,7 +889,7 @@ mod tests {
         assert_eq!(t.rim, Some(provider_meta("codex").accent));
         assert_eq!(t.fill, TrayFill::Normal);
         assert!(!t.dim && !t.warn);
-        assert!(t.tooltip.starts_with("Codex・每週 剩 59%"));
+        assert!(t.tooltip.starts_with("Codex · 每週 剩 59%"));
     }
 
     #[test]
@@ -806,5 +926,78 @@ mod tests {
         assert_eq!(tray_view(Some(&none), &[&none], now).text, "–");
         let off = status("antigravity", None, Some(FetchFailure::NotRunning));
         assert!(!tray_view(Some(&off), &[&off], now).warn);
+    }
+
+    #[test]
+    fn 同帳戶的儲值只留一份() {
+        let now = SystemTime::now();
+        let group = |id: &str, account: Option<&str>, fail| {
+            let mut sn = snap(
+                vec![
+                    win("每月上限", 10.0, None, None, now),
+                    win("儲值餘額", 20.0, None, None, now),
+                ],
+                0,
+                now,
+            );
+            sn.credits = Some(Credits { used: 1.0, limit: 5.0 });
+            sn.funds_account = account.map(Into::into);
+            ProviderStatus {
+                group_id: id.into(),
+                ..status("openrouter", Some(sn), fail)
+            }
+        };
+        // 留有儲值的組
+        let kept = |mut v: Vec<ProviderStatus>| -> Vec<bool> {
+            share_account_funds(&mut v);
+            v.iter()
+                .map(|s| {
+                    let sn = s.snapshot.as_ref().unwrap();
+                    assert_eq!(sn.windows[0].name, "每月上限");
+                    assert_eq!(sn.credits.is_some(), sn.windows.len() == 2);
+                    sn.credits.is_some()
+                })
+                .collect()
+        };
+        let a = group("a", Some("x"), None);
+        let b = group("b", Some("x"), None);
+        let other = group("c", Some("y"), None);
+        assert_eq!(kept(vec![a.clone(), b.clone(), other]), [true, false, true]);
+        // 第一組失敗時由第二組顯示；都失敗時留在第一組
+        let failed = group("a", Some("x"), Some(FetchFailure::TokenExpired));
+        assert_eq!(kept(vec![failed.clone(), b.clone()]), [false, true]);
+        let failed_b = group("b", Some("x"), Some(FetchFailure::Network));
+        assert_eq!(kept(vec![failed, failed_b]), [true, false]);
+        // 帳戶不明時照樣顯示
+        assert_eq!(kept(vec![group("a", None, None), group("b", None, None)]), [true, true]);
+    }
+
+    #[test]
+    fn 多組的標題與托盤() {
+        let now = SystemTime::now();
+        let group = |id: &str, name: &str, used: f64, fail| ProviderStatus {
+            group_id: id.into(),
+            group_name: name.into(),
+            ..status(
+                "openrouter",
+                Some(snap(vec![win("儲值餘額", used, None, None, now)], 0, now)),
+                fail,
+            )
+        };
+        let a = group("openrouter", "個人", 30.0, Some(FetchFailure::Network));
+        let b = group("openrouter#x", "工作", 80.0, None);
+        assert_eq!(title(&b), "OpenRouter · 工作");
+        assert_eq!(title(&status("openrouter", None, None)), "OpenRouter");
+        let focus = tightest_group(&[&a, &b], now).unwrap();
+        assert_eq!(focus.group_id, "openrouter#x");
+        let t = tray_view(Some(focus), &[&a, &b], now);
+        assert_eq!(t.text, "20");
+        assert!(t.tooltip.starts_with("OpenRouter · 工作 · 儲值餘額 剩 20%"));
+        assert!(t.warn, "另一組失敗也要警示");
+        assert!(overview_headline(&[&a, &b], now).contains("OpenRouter · 工作"));
+        // 都沒有資料時取第一組
+        let (c, d) = (status("codex", None, None), status("codex", None, None));
+        assert!(std::ptr::eq(tightest_group(&[&c, &d], now).unwrap(), &c));
+        assert!(tightest_group(&[], now).is_none());
     }
 }
