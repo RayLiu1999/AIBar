@@ -81,6 +81,19 @@ impl App {
         ids
     }
 
+    /// 啟用的憑證組的狀態，依顯示順序；同帳戶的儲值只留一份
+    fn enabled_statuses(&self) -> Vec<ProviderStatus> {
+        let statuses = self.statuses.borrow();
+        let mut enabled: Vec<ProviderStatus> = self
+            .groups()
+            .iter()
+            .filter(|g| g.enabled)
+            .filter_map(|g| statuses.iter().find(|s| s.group_id == g.id).cloned())
+            .collect();
+        view::share_account_funds(&mut enabled);
+        enabled
+    }
+
     fn set_statuses(&self, statuses: Vec<ProviderStatus>) {
         *self.statuses.borrow_mut() = statuses;
         self.render();
@@ -93,12 +106,8 @@ impl App {
         if !self.config.borrow().notifications {
             return;
         }
-        let groups = self.groups();
-        let statuses = self.statuses.borrow();
-        let enabled: Vec<&ProviderStatus> = statuses
-            .iter()
-            .filter(|s| groups.iter().any(|g| g.enabled && g.id == s.group_id))
-            .collect();
+        let statuses = self.enabled_statuses();
+        let enabled: Vec<&ProviderStatus> = statuses.iter().collect();
         for alert in self.notifier.borrow_mut().check(&enabled, SystemTime::now()) {
             log!("[通知] {}", alert.title);
             platform::toast::show(&alert.title, &alert.body);
@@ -109,14 +118,8 @@ impl App {
     fn render(&self) {
         let now = SystemTime::now();
         let ids = self.enabled_ids();
-        let statuses = self.statuses.borrow();
-        // 啟用的憑證組，依顯示順序
-        let enabled: Vec<&ProviderStatus> = self
-            .groups()
-            .iter()
-            .filter(|g| g.enabled)
-            .filter_map(|g| statuses.iter().find(|s| s.group_id == g.id))
-            .collect();
+        let statuses = self.enabled_statuses();
+        let enabled: Vec<&ProviderStatus> = statuses.iter().collect();
 
         // 選到的 Provider 已停用時退回總覽
         let selected = self.config.borrow().selected_tab.clone();

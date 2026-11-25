@@ -159,7 +159,7 @@ Claude、Codex、Command Code 借用 CLI 已登入的憑證，Antigravity 探測
 **OpenRouter 回應解析**
 
 - `/api/v1/key` 的 `data.limit`（美元）有值時，顯示一個額度視窗：名稱依 `limit_reset`（`daily`／`weekly`／`monthly` →「每日上限／每週上限／每月上限」，null →「Key 上限」），已用 = (`limit` − `limit_remaining`) / `limit`；重置時間依 UTC 午夜、週一、每月 1 日推算。
-- `/api/v1/credits` 的 `data.total_credits`、`total_usage` 取得到時，顯示「儲值餘額」視窗（無重置）與「帳戶已用 $x / $y」；取不到（部分 key 沒有權限）時不顯示。這兩個數字屬於整個帳戶，同帳戶的每把 key 都相同。
+- `/api/v1/credits` 的 `data.total_credits`、`total_usage` 取得到時，顯示「儲值餘額」視窗（無重置）與「帳戶已用 $x / $y」；取不到（部分 key 沒有權限）時不顯示。這兩個數字屬於整個帳戶，同帳戶的每把 key 都相同，因此以 `/api/v1/key` 的 `organization_id`（null 時改用 `creator_user_id`）的雜湊認出同帳戶的憑證組，只在其中一組顯示（第一個沒有失敗原因的；都失敗時為第一組），托盤與通知也只算一次。認不出帳戶時各組照樣顯示。
 - `/api/v1/key` 的 `data.usage`、`usage_daily`、`usage_weekly`、`usage_monthly` 為此 key 自己的花費（Key 花費；週為週一起算，皆以 UTC 計，不含 BYOK），顯示「此 key 已用 $x · 本月 $y」；缺任何一項時不顯示。
 - 401／403 視為 key 無效，提示到設定重新輸入。
 
@@ -193,6 +193,7 @@ pub struct Snapshot {
     pub account_hash: String,              // 帳號識別的雜湊，不存原始 id
     pub windows: Vec<UsageWindow>,
     pub credits: Option<Credits>,          // 金額型額度（Command Code、OpenRouter）
+    pub funds_account: Option<String>,     // 儲值所屬帳戶的雜湊（OpenRouter）
     pub key_spend: Option<KeySpend>,       // Key 花費（OpenRouter）
     pub resets: Option<ResetBank>,         // 保留重置：每一次的到期時間（最快的在前）、此刻可套用次數（Codex）
     pub fetched_at: SystemTime,

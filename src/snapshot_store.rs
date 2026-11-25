@@ -34,6 +34,9 @@ struct StoredSnapshot {
     /// 金額型額度（美元）；舊版檔案沒有此欄位
     #[serde(default)]
     credits: Option<(f64, f64)>,
+    /// 儲值所屬帳戶的雜湊；舊版檔案沒有此欄位
+    #[serde(default)]
+    funds_account: Option<String>,
     /// Key 花費（美元）；舊版檔案沒有此欄位
     #[serde(default)]
     key_spend: Option<StoredSpend>,
@@ -88,6 +91,7 @@ impl From<&Snapshot> for StoredSnapshot {
                 })
                 .collect(),
             credits: s.credits.as_ref().map(|c| (c.used, c.limit)),
+            funds_account: s.funds_account.clone(),
             key_spend: s.key_spend.as_ref().map(|k| StoredSpend {
                 total: k.total,
                 month: k.month,
@@ -119,6 +123,7 @@ impl From<StoredSnapshot> for Snapshot {
                 })
                 .collect(),
             credits: s.credits.map(|(used, limit)| Credits { used, limit }),
+            funds_account: s.funds_account,
             key_spend: s.key_spend.map(|k| KeySpend {
                 total: k.total,
                 month: k.month,
@@ -201,6 +206,7 @@ mod tests {
                 used: 4.33,
                 limit: 10.0,
             }),
+            funds_account: Some("def".into()),
             key_spend: Some(KeySpend {
                 total: 3.5,
                 month: 1.25,
@@ -223,6 +229,7 @@ mod tests {
         assert_eq!(b.windows[0].resets_at, s.windows[0].resets_at);
         assert_eq!(b.windows[0].window_secs, Some(18000));
         assert_eq!(b.credits, s.credits);
+        assert_eq!(b.funds_account, s.funds_account);
         assert_eq!(b.key_spend, s.key_spend);
         assert_eq!(b.resets, s.resets);
     }

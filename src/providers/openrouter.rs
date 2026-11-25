@@ -2,7 +2,8 @@
 //!
 //! - `GET https://openrouter.ai/api/v1/key`：此 key 的花費上限 `limit`、剩餘 `limit_remaining`、
 //!   重置週期 `limit_reset`（daily／weekly／monthly／null，UTC 午夜；週為週一起算），
-//!   以及此 key 自己的花費 `usage`（累計）、`usage_daily`、`usage_weekly`、`usage_monthly`
+//!   以及此 key 自己的花費 `usage`（累計）、`usage_daily`、`usage_weekly`、`usage_monthly`，
+//!   與所屬帳戶 `organization_id`（個人帳戶為 null，改看 `creator_user_id`；只存雜湊）
 //! - `GET https://openrouter.ai/api/v1/credits`：帳戶的儲值總額 `total_credits` 與已用 `total_usage`
 //!   （部分 key 沒有權限，取不到時略過）
 
@@ -16,6 +17,8 @@ use crate::model::{Credits, FetchFailure, KeySpend, Snapshot, UsageWindow};
 use crate::secret;
 
 pub const ID: &str = "openrouter";
+/// 帳戶儲值的額度視窗；屬於整個帳戶，不屬於單一 key
+pub const BALANCE: &str = "儲值餘額";
 const KEY_URL: &str = "https://openrouter.ai/api/v1/key";
 const CREDITS_URL: &str = "https://openrouter.ai/api/v1/credits";
 
@@ -55,6 +58,7 @@ impl UsageProvider for OpenRouter {
             account_hash: account_hash(&key),
             windows: parsed.windows,
             credits: parsed.credits,
+            funds_account: parsed.funds_account,
             key_spend: parsed.key_spend,
             resets: None,
             fetched_at: SystemTime::now(),
@@ -66,6 +70,7 @@ struct Parsed {
     plan: Option<String>,
     windows: Vec<UsageWindow>,
     credits: Option<Credits>,
+    funds_account: Option<String>,
     key_spend: Option<KeySpend>,
 }
 
@@ -130,13 +135,24 @@ fn parse(key: &Value, credits: Option<&Value>, now: SystemTime) -> Option<Parsed
         .filter(|(total, _)| *total > 0.0);
     let credits = balance.map(|(total, used)| {
         windows.push(UsageWindow {
-            name: "儲值餘額".into(),
+            name: BALANCE.into(),
             used_percent: (used / total * 100.0).clamp(0.0, 100.0),
             resets_at: None,
             window_secs: None,
         });
         Credits { used, limit: total }
     });
+
+    // 沒有餘額資訊時用不到
+    let funds_account = credits
+        .is_some()
+        .then(|| {
+            data["organization_id"]
+                .as_str()
+                .or_else(|| data["creator_user_id"].as_str())
+        })
+        .flatten()
+        .map(account_hash);
 
     let plan = match data["is_free_tier"].as_bool() {
         Some(true) => Some("免費".to_string()),
@@ -147,6 +163,7 @@ fn parse(key: &Value, credits: Option<&Value>, now: SystemTime) -> Option<Parsed
         plan,
         windows,
         credits,
+        funds_account,
         key_spend: key_spend(data),
     })
 }
@@ -202,6 +219,23 @@ mod tests {
                 day: 0.0042
             })
         );
+    }
+
+    #[test]
+    fn 儲值所屬帳戶() {
+        let credits = json!({ "data": { "total_credits": 50, "total_usage": 20 } });
+        let account = |key: Value, credits: Option<&Value>| {
+            parse(&json!({ "data": key }), credits, at(2026, 11, 10, 3))
+                .unwrap()
+                .funds_account
+        };
+        let personal = json!({ "organization_id": null, "creator_user_id": "user_1" });
+        let member = json!({ "organization_id": "org_1", "creator_user_id": "user_1" });
+        assert_eq!(account(personal.clone(), Some(&credits)), Some(account_hash("user_1")));
+        // 組織的儲值由成員共用
+        assert_eq!(account(member, Some(&credits)), Some(account_hash("org_1")));
+        assert_eq!(account(json!({}), Some(&credits)), None);
+        assert_eq!(account(personal, None), None);
     }
 
     #[test]

@@ -12,6 +12,8 @@ pub struct Snapshot {
     pub windows: Vec<UsageWindow>,
     /// 以金額計的額度（Command Code、OpenRouter）；沒有時為 None
     pub credits: Option<Credits>,
+    /// 儲值所屬帳戶的雜湊（OpenRouter），用來認出同帳戶的多把 key；不明時為 None
+    pub funds_account: Option<String>,
     /// 這把 API key 自己的花費（OpenRouter）；沒有時為 None
     pub key_spend: Option<KeySpend>,
     /// 保留重置（Claude、Codex）；服務沒有提供或一次都沒有時為 None

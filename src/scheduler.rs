@@ -35,7 +35,7 @@ enum Msg {
     /// 某一組的憑證已更換：捨棄舊資料並立即刷新
     Reset(String),
     /// 抓取結果；世代與目前不符（憑證已更換）時捨棄
-    Done(String, u64, Result<Snapshot, FetchFailure>),
+    Done(String, u64, Box<Result<Snapshot, FetchFailure>>),
 }
 
 /// 給 UI 端使用的控制介面
@@ -233,7 +233,7 @@ fn run(
                     .iter_mut()
                     .find(|s| s.status.group_id == id && s.generation == generation);
                 let Some(slot) = slot else { continue };
-                finish(slot, result);
+                finish(slot, *result);
                 publish(&slots);
                 if success {
                     save(&slots);
@@ -302,7 +302,7 @@ fn start(slot: &mut Slot, tx: &Sender<Msg>) {
     let tx = tx.clone();
     thread::spawn(move || {
         let result = provider.fetch();
-        let _ = tx.send(Msg::Done(id, generation, result));
+        let _ = tx.send(Msg::Done(id, generation, Box::new(result)));
     });
 }
 
@@ -380,6 +380,7 @@ mod tests {
                     window_secs: None,
                 }],
                 credits: None,
+                funds_account: None,
                 key_spend: None,
                 resets: None,
                 fetched_at: SystemTime::now(),

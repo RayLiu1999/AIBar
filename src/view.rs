@@ -435,6 +435,28 @@ pub fn has_warning(s: &ProviderStatus) -> bool {
         .is_some_and(|f| !matches!(f, FetchFailure::NotRunning))
 }
 
+/// 同帳戶的多組只留一份帳戶儲值（儲值餘額與帳戶已用），其餘只留 key 自己的資料。
+/// 留在第一個沒有失敗原因的組，免得停在舊數字；都失敗時留在第一組
+pub fn share_account_funds(statuses: &mut [ProviderStatus]) {
+    let account = |s: &ProviderStatus| Some((s.provider_id, s.snapshot.as_ref()?.funds_account.clone()?));
+    for i in 0..statuses.len() {
+        let Some(key) = account(&statuses[i]) else { continue };
+        let same = |s: &&ProviderStatus| account(s).as_ref() == Some(&key);
+        let holder = statuses
+            .iter()
+            .filter(same)
+            .find(|s| s.last_failure.is_none())
+            .or_else(|| statuses.iter().find(same))
+            .map(|s| s.group_id.clone());
+        if holder.as_deref() != Some(statuses[i].group_id.as_str())
+            && let Some(sn) = &mut statuses[i].snapshot
+        {
+            sn.credits = None;
+            sn.windows.retain(|w| w.name != crate::providers::openrouter::BALANCE);
+        }
+    }
+}
+
 /// 同一個 Provider 的多組中，代表托盤的那一組：剩餘最少的；都沒有資料時為第一組
 pub fn tightest_group<'a>(groups: &[&'a ProviderStatus], now: SystemTime) -> Option<&'a ProviderStatus> {
     groups
@@ -658,6 +680,7 @@ mod tests {
             account_hash: String::new(),
             windows,
             credits: None,
+            funds_account: None,
             key_spend: None,
             resets: None,
             fetched_at: now - Duration::from_secs(age_secs),
@@ -903,6 +926,50 @@ mod tests {
         assert_eq!(tray_view(Some(&none), &[&none], now).text, "–");
         let off = status("antigravity", None, Some(FetchFailure::NotRunning));
         assert!(!tray_view(Some(&off), &[&off], now).warn);
+    }
+
+    #[test]
+    fn 同帳戶的儲值只留一份() {
+        let now = SystemTime::now();
+        let group = |id: &str, account: Option<&str>, fail| {
+            let mut sn = snap(
+                vec![
+                    win("每月上限", 10.0, None, None, now),
+                    win("儲值餘額", 20.0, None, None, now),
+                ],
+                0,
+                now,
+            );
+            sn.credits = Some(Credits { used: 1.0, limit: 5.0 });
+            sn.funds_account = account.map(Into::into);
+            ProviderStatus {
+                group_id: id.into(),
+                ..status("openrouter", Some(sn), fail)
+            }
+        };
+        // 留有儲值的組
+        let kept = |mut v: Vec<ProviderStatus>| -> Vec<bool> {
+            share_account_funds(&mut v);
+            v.iter()
+                .map(|s| {
+                    let sn = s.snapshot.as_ref().unwrap();
+                    assert_eq!(sn.windows[0].name, "每月上限");
+                    assert_eq!(sn.credits.is_some(), sn.windows.len() == 2);
+                    sn.credits.is_some()
+                })
+                .collect()
+        };
+        let a = group("a", Some("x"), None);
+        let b = group("b", Some("x"), None);
+        let other = group("c", Some("y"), None);
+        assert_eq!(kept(vec![a.clone(), b.clone(), other]), [true, false, true]);
+        // 第一組失敗時由第二組顯示；都失敗時留在第一組
+        let failed = group("a", Some("x"), Some(FetchFailure::TokenExpired));
+        assert_eq!(kept(vec![failed.clone(), b.clone()]), [false, true]);
+        let failed_b = group("b", Some("x"), Some(FetchFailure::Network));
+        assert_eq!(kept(vec![failed, failed_b]), [true, false]);
+        // 帳戶不明時照樣顯示
+        assert_eq!(kept(vec![group("a", None, None), group("b", None, None)]), [true, true]);
     }
 
     #[test]

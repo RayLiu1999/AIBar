@@ -603,7 +603,7 @@ component ProviderDetail inherits VerticalLayout {
         wrap: word-wrap;
     }
 
-    if root.data.has-snapshot: Rectangle {
+    if root.data.has-snapshot && root.data.rows.length > 0: Rectangle {
         background: Theme.card-bg;
         border-radius: 8px;
         border-width: 1px;
