@@ -158,6 +158,8 @@ component SmallButton inherits Rectangle {
 }
 
 export component SettingsWindow inherits Window {
+    // 依平台顯示用語
+    in property <bool> macos;
     // 0 一般、1 Provider、2 通知、3 關於
     in-out property <int> page;
     in property <bool> autostart;
@@ -247,7 +249,7 @@ export component SettingsWindow inherits Window {
                     }
                     SettingRow {
                         title: "開機時自動啟動";
-                        description: "登入 Windows 後在托盤待命";
+                        description: root.macos ? "登入 macOS 後在選單列待命" : "登入 Windows 後在托盤待命";
                         Switch {
                             checked: root.autostart;
                             accessible-label: "開機時自動啟動";
@@ -258,7 +260,7 @@ export component SettingsWindow inherits Window {
                     }
                     SettingRow {
                         title: "用量顯示方式";
-                        description: "主視窗的數字與進度條顯示剩餘量或已使用量；托盤圖示一律顯示剩餘";
+                        description: root.macos ? "面板的數字與進度條顯示剩餘量或已使用量；選單列一律顯示剩餘" : "主視窗的數字與進度條顯示剩餘量或已使用量；托盤圖示一律顯示剩餘";
                         ComboBox {
                             width: 140px;
                             model: ["剩餘", "已使用"];
@@ -280,7 +282,7 @@ export component SettingsWindow inherits Window {
                         color: SettingsTheme.text;
                     }
                     Text {
-                        text: "排序決定主視窗頁籤的順序；總覽時托盤顯示排在最前面的已啟用 Provider。";
+                        text: root.macos ? "排序決定面板頁籤的順序；總覽時選單列顯示排在最前面的已啟用 Provider。" : "排序決定主視窗頁籤的順序；總覽時托盤顯示排在最前面的已啟用 Provider。";
                         font-size: 12px;
                         color: SettingsTheme.subtext;
                         wrap: word-wrap;
@@ -362,7 +364,7 @@ export component SettingsWindow inherits Window {
                                 }
                             }
                         }
-                        // API key 輸入列：只存在本機，以 DPAPI 加密
+                        // API key 輸入列：只存在本機的加密儲存
                         if p.needs-key: HorizontalLayout {
                             padding-left: 82px;
                             padding-right: 16px;
@@ -406,7 +408,7 @@ export component SettingsWindow inherits Window {
                     }
                     SettingRow {
                         title: "額度快用完時通知";
-                        description: "任一額度視窗已用超過 80% 與 95% 時各發一則 Windows 通知；該視窗重置後才會再次通知";
+                        description: root.macos ? "任一額度視窗已用超過 80% 與 95% 時各發一則通知；該視窗重置後才會再次通知" : "任一額度視窗已用超過 80% 與 95% 時各發一則 Windows 通知；該視窗重置後才會再次通知";
                         Switch {
                             checked: root.notifications;
                             accessible-label: "額度快用完時通知";
@@ -426,12 +428,12 @@ export component SettingsWindow inherits Window {
                         color: SettingsTheme.text;
                     }
                     Text {
-                        text: "AIBar " + root.version + "：Windows 系統匣 AI 用量工具";
+                        text: "AIBar " + root.version + (root.macos ? "：macOS 選單列 AI 用量工具" : "：Windows 系統匣 AI 用量工具");
                         font-size: 14px;
                         color: SettingsTheme.text;
                     }
                     Text {
-                        text: "借用各 CLI 已登入的憑證讀取用量，只讀不寫；OpenRouter 的 API key 以 Windows DPAPI 加密存在本機。不收集或回傳任何資料。";
+                        text: "借用各 CLI 已登入的憑證讀取用量，只讀不寫；OpenRouter 的 API key " + (root.macos ? "存在 macOS Keychain" : "以 Windows DPAPI 加密存在本機") + "。不收集或回傳任何資料。";
                         font-size: 12px;
                         color: SettingsTheme.subtext;
                         wrap: word-wrap;

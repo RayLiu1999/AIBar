@@ -27,6 +27,10 @@ ureq = { version = "3.5.1", default-features = false, features = ["native-tls-no
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"
+objc2 = "0.6.5"
+objc2-app-kit = "0.3.2"
+objc2-foundation = "0.3.2"
+objc2-quartz-core = "0.3.2"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = [

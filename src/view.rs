@@ -460,7 +460,7 @@ pub enum TrayFill {
 }
 
 /// 托盤圖示與 Tooltip 的內容
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TrayView {
     /// 圖示中央的文字：剩餘百分比、「滿」或「–」
     pub text: String,

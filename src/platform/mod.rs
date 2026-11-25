@@ -1,7 +1,6 @@
 //! 平台功能的唯一入口：依作業系統轉出同名函式，其餘模組不直接呼叫系統 API。
 
 /// 托盤（選單列）選單的動作
-#[cfg_attr(target_os = "macos", allow(dead_code))] // 工單 07 完成後移除
 pub struct TrayActions {
     pub refresh: Box<dyn Fn()>,
     pub settings: Box<dyn Fn()>,

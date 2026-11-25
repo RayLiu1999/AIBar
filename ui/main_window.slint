@@ -703,10 +703,15 @@ export component MainWindow inherits Window {
     callback copy-text(string);
     callback open-url(string);
     callback open-settings();
+    callback quit-requested();
 
+    // macOS：貼著選單列圖示的無邊框面板
+    in property <bool> popover;
+
+    no-frame: root.popover;
     title: "AIBar";
-    preferred-width: 460px;
-    preferred-height: 640px;
+    preferred-width: root.popover ? 420px : 460px;
+    preferred-height: root.popover ? 560px : 640px;
     min-width: 380px;
     min-height: 300px;
     background: Theme.window-bg;
@@ -829,6 +834,17 @@ export component MainWindow inherits Window {
                             }
                         }
                     }
+                    // 面板沒有選單，結束放在這裡
+                    if root.popover: VerticalLayout {
+                        alignment: center;
+                        IconButton {
+                            label: "結束 AIBar";
+                            commands: "M 8 1.5 L 8 7.5 M 4.6 3.6 A 5.6 5.6 0 1 0 11.4 3.6";
+                            clicked => {
+                                root.quit-requested();
+                            }
+                        }
+                    }
                 }
 
                 Rectangle {
@@ -858,7 +874,7 @@ export component MainWindow inherits Window {
                             vertical-alignment: center;
                             horizontal-stretch: 1;
                         }
-                        VerticalLayout {
+                        if !root.popover: VerticalLayout {
                             alignment: center;
                             horizontal-stretch: 0;
                             LayoutSwitch {

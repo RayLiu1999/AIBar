@@ -9,7 +9,6 @@
 #[macro_use]
 mod applog;
 mod config;
-#[cfg_attr(target_os = "macos", allow(dead_code))] // 工單 07 完成後移除
 mod icon_art;
 mod model;
 mod notify;
@@ -202,6 +201,7 @@ impl App {
             match SettingsWindow::new() {
                 Ok(w) => {
                     w.set_version(env!("CARGO_PKG_VERSION").into());
+                    w.set_macos(platform::IS_MACOS);
                     w.on_autostart_toggled(|on| {
                         platform::autostart::set_enabled(on);
                         with_app(|app| app.render_settings())();
