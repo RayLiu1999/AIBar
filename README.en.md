@@ -22,7 +22,7 @@ Inspired by [CodexBar](https://github.com/steipete/CodexBar) for macOS, delibera
 | Codex (subscription) | 5-hour, weekly, banked resets and their expiry | Codex CLI credentials `~/.codex/auth.json` |
 | Antigravity | 5-hour and weekly per model group | The running Antigravity app (local language server, no internet access); the signed-in `agy` CLI when the app is closed |
 | Command Code | 5-hour, weekly, monthly, and spend this period | Command Code CLI credentials `~/.commandcode/auth.json` |
-| OpenRouter | Key spending limit, credit balance | An API key pasted in Settings (encrypted with DPAPI on Windows, stored in the Keychain on macOS) |
+| OpenRouter | Key spending limit, credit balance; multiple named keys supported | API keys pasted in Settings (encrypted with DPAPI on Windows, stored in the Keychain on macOS) |
 
 Any service whose CLI you have logged in to is enabled automatically on first launch. When a token expires, AIBar does **not** refresh it itself (that could log your CLI out); it asks you to run the CLI once in a terminal.
 

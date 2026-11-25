@@ -267,6 +267,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 - 視窗只建立一次，隱藏時保留；不在每次開啟時重建（重建會經過預設大小的過渡，造成位置跳動與畫面殘缺）。
 - 開啟時，若某 Provider 的快照超過其背景刷新間隔的一半且不在退避期間，自動刷新該 Provider。
 - 頂部為頁籤列：「總覽」與每個啟用 Provider 一個頁籤（依設定的排序，名稱前有代表色圓點），右側為「立即刷新」與「設定」圖示按鈕；內容超出視窗高度時捲動。
+- **憑證組**：總覽每組一張卡片，標題為「OpenRouter・工作」，未命名時只有 Provider 名稱；頁籤以 Provider 為單位，內容依序列出各組。托盤以焦點 Provider 中剩餘最少的一組代表，任一組有失敗原因即顯示警示。通知各組分開計算，標題帶組名。
 - **總覽**：最上方一行「最先用完：{Provider} {額度視窗}，剩 N%」與更新時間；每個啟用 Provider 一張卡片，標題列為代表色字母方塊、名稱、方案標籤，各額度視窗如下。最上方那一行右側有「清單／並排」切換：清單為卡片由上往下一欄；並排為卡片左右排（欄數依視窗寬度，每欄至少 300 邏輯像素，卡片依序輪流放進各欄），切到並排時視窗加寬到每個啟用 Provider 一欄（不超出螢幕工作區），切回清單時還原原本的寬度。選擇存入 `config.json` 的 `overview_layout`（`list`／`columns`）。
 - **Provider 頁籤**：大標題（名稱、方案、更新時間）；有失敗原因時顯示提示框（`TokenExpired`、`NotLoggedIn` 附「複製指令」按鈕）；各額度視窗同總覽，但另顯示絕對重置時間；下方列出來源、下次刷新時間與「開啟官方用量頁」連結。
 - **額度視窗**：第一行為名稱、「剩餘 72%」（或「已使用 28%」，依設定）與重置倒數；第二行為進度條，長度代表所選顯示方式的量，顏色平常為 Provider 代表色，剩 10%–29% 轉黃、低於 10% 轉紅；第三行為進度說明。
@@ -309,7 +310,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 
 - 一般視窗，左側分類：一般、Provider、通知、關於。由主視窗的設定按鈕或右鍵選單「設定…」開啟。
 - 一般：開機時自動啟動（開關）、用量顯示方式（剩餘／已使用，預設剩餘）。
-- Provider：每個 Provider 一列，含 ▲▼ 排序按鈕、代表色字母方塊、偵測狀態（例如「已偵測到 Claude Code 登入 · Pro」）與啟用開關。OpenRouter 另有一列密碼輸入框與「儲存」「清除」按鈕：儲存後自動啟用並立即刷新，清除後停用；沒有 key 時開關停用。
+- Provider：每個 Provider 一列，含 ▲▼ 排序按鈕、代表色字母方塊、偵測狀態（例如「已偵測到 Claude Code 登入 · Pro」）與啟用開關。OpenRouter 改列出各憑證組：每組有名稱、狀態、「編輯」（改名、換 key、刪除，刪除要按兩次）與啟用開關，下方為「＋ 新增一組」。新增後自動啟用並立即刷新；換 key 後捨棄舊快照與尚未完成的舊結果；儲存失敗時在表單中顯示原因。
 - 通知：「額度快用完時通知」開關（預設開啟）。
 - 關於：版本、簡介與 `AboutSlint`（Slint 授權要求）。
 - 變更立即生效並寫入 `config.json`，不需按儲存。
@@ -318,19 +319,19 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 
 - 每個額度視窗的**已使用量**跨過 80% 與 95% 時各發一次 Windows Toast（標題「Codex 每週 已用 82%」，內文「剩餘 18%，1 天 18 小時後重置」）；直接跳過 80% 時只發一則。該視窗重置（重置時間改變）後才會再次通知。
 - 以 WinRT `ToastNotificationManager` 發送，不需額外 crate。免安裝程式需要 AppUserModelID：啟動時登錄 `HKCU\Software\Classes\AppUserModelId\RayLiu.AIBar`（`DisplayName`、`IconUri` 指向 `%APPDATA%\AiBar\icon.png`），並以 `SetCurrentProcessExplicitAppUserModelID` 套用。
-- 已通知紀錄存於 `notified.json`（鍵為「Provider|額度視窗|重置時間」），重開機不重複通知；重置時間已過的紀錄自動清除。
+- 已通知紀錄存於 `notified.json`（鍵為「憑證組|額度視窗|重置時間」），重開機不重複通知；重置時間已過的紀錄自動清除。
 - `aibar --notify-test` 發一則測試通知，用來確認 Windows 通知設定沒有擋住 AIBar。
 
 ## 8. 設定、儲存與資安
 
-程式只讀取 CLI 已有的憑證；自己寫入的檔案都在 `%APPDATA%\AiBar\`，唯一需要保管的機密是 OpenRouter 的 API key，以 DPAPI 加密後存放。
+程式只讀取 CLI 已有的憑證；自己寫入的檔案都在 `%APPDATA%\AiBar\`，唯一需要保管的機密是 OpenRouter 的 API key（可有多組），以 DPAPI 加密後存放。
 
 | 檔案 | 內容 | 說明 |
 | --- | --- | --- |
 | `config.json` | Provider 啟用與排序、顯示方式、最後選的頁籤、視窗位置與大小 | 由設定視窗與主視窗讀寫，使用者不需編輯 |
 | `snapshots.json` | 各 Provider 的快照（含金額型額度與保留重置） | 每次刷新成功時寫入，啟動時讀取；讀不到或格式錯誤時視為沒有快照 |
 | `aibar.log` | 日誌（時間、Provider、狀態碼、耗時、錯誤種類） | 超過 1 MB 改名為 `aibar.log.old`，最多保留兩份；debug 版同時印到主控台；單元測試不寫入 |
-| `secrets.bin` | OpenRouter API key（`{"openrouter": "…"}` 整份加密） | `CryptProtectData`（範圍 `CurrentUser`）加密 |
+| `secrets.bin` | OpenRouter API key（`{"<憑證組 id>": "…"}` 整份加密） | `CryptProtectData`（範圍 `CurrentUser`）加密 |
 | `notified.json` | 已通知紀錄 | 見第 7 節「通知」 |
 | `icon.png` | Toast 通知用的 App 圖示 | 啟動時產生 |
 
@@ -352,6 +353,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 ```
 
 - 首次啟動（`config.json` 不存在）：憑證檔存在的 Provider 預設啟用，其餘停用，結果寫入 `config.json`；之後只依 config。`providers` 的陣列順序即顯示順序；之後新增的 Provider 會附加在最後，偵測得到登入憑證的預設啟用。
+- 憑證組：`providers[]` 可有 `groups`（`id`、`name`、`enabled`，陣列順序即顯示順序），目前只有 OpenRouter 使用。沒有 `groups` 時視為一組未命名的，其 `id` 就是 Provider id；其餘為「Provider id#識別碼」，刪除後不重複使用。快照、機密與通知紀錄都以組的 `id` 為鍵，因此單組的舊資料不需轉換。有 `groups` 時 `enabled` 等於「任一組啟用」，供舊版讀取。名稱最多 20 字。
 - 刷新間隔（10 分鐘）、開啟視窗自動刷新門檻（刷新間隔的一半）、手動刷新下限（1 分鐘）、顏色門檻（70／90）、通知門檻（80／95）皆為程式常數，不可設定。
 - 開機自啟以登錄檔為唯一來源：`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，設定視窗的開關直接讀寫登錄檔，不需系統管理員權限。使用者在工作管理員或「設定 → 應用程式 → 啟動」停用時，Windows 會在 `Explorer\StartupApproved\Run` 記下停用標記（第一個位元組為奇數）：判斷是否啟用要一併檢查，從 AIBar 開啟時清除該標記。
 

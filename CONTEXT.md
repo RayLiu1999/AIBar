@@ -8,8 +8,12 @@
 一個提供額度的 AI 服務（Claude、Codex、Antigravity、Command Code、OpenRouter），是用量資料的來源單位。
 _Avoid_: 服務、平台、帳號
 
+**憑證組**：
+某個 Provider 底下一份可獨立取得用量的憑證，有使用者自訂的名稱；一個 Provider 可有多組，各有自己的快照、刷新與通知。兩組可能屬於服務端的同一個帳號。
+_Avoid_: 帳號、設定檔、profile
+
 **啟用**：
-使用者在介面上打開某個 Provider 的狀態；只有啟用的 Provider 會顯示卡片、讀取憑證並連線，停用的完全不碰。
+使用者在介面上打開某個 Provider 或憑證組的狀態；只有啟用的會顯示卡片、讀取憑證並連線，停用的完全不碰。
 _Avoid_: 顯示、勾選、開啟
 
 **方案（Plan）**：
@@ -41,7 +45,7 @@ macOS 上貼著選單列圖示彈出的主視窗，失焦即收起。
 _Avoid_: popover、popup、彈出視窗
 
 **焦點 Provider**：
-托盤圖示目前代表的 Provider：主視窗在總覽時為排序第一的啟用 Provider，在某個 Provider 頁籤時為該 Provider。
+托盤圖示目前代表的 Provider：主視窗在總覽時為排序第一的啟用 Provider，在某個 Provider 頁籤時為該 Provider。有多個憑證組時，以剩餘最少的一組代表。
 _Avoid_: 目前 Provider、主要 Provider
 
 **金額型額度**：
@@ -53,7 +57,7 @@ _Avoid_: 點數、餘額（「餘額」只用於 OpenRouter 的儲值）
 _Avoid_: 重置點數、reset credits
 
 **快照（Snapshot）**：
-某個 Provider 最後一次**成功**取得的用量資料，連同取得時間。抓取失敗不會覆蓋快照。
+某個憑證組最後一次**成功**取得的用量資料，連同取得時間。抓取失敗不會覆蓋快照。
 _Avoid_: 資料、結果
 
 **舊快照**：
@@ -65,7 +69,7 @@ _Avoid_: 過期資料、Stale（「過期」保留給 token）
 _Avoid_: 歸零、清空
 
 **刷新（Refresh）**：
-向 Provider 重新抓取用量的一次嘗試；成功時產生新的快照，失敗時只留下失敗原因。
+為某個憑證組向 Provider 重新抓取用量的一次嘗試；成功時產生新的快照，失敗時只留下失敗原因。
 _Avoid_: 更新、同步、輪詢
 
 **失敗原因**：
