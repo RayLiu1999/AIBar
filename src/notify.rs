@@ -15,9 +15,10 @@ use windows::Win32::System::Registry::{HKEY_CURRENT_USER, REG_SZ, RegSetKeyValue
 use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
 use windows::core::{HSTRING, PCWSTR};
 
-use crate::config::{app_dir, write_atomic, write_atomic_bytes};
+use crate::config::{write_atomic, write_atomic_bytes};
 use crate::icon_art;
 use crate::model::ProviderStatus;
+use crate::platform::app_dir;
 use crate::view;
 
 const AUMID: &str = "RayLiu.AIBar";

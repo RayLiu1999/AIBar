@@ -8,7 +8,6 @@ pub mod codex;
 pub mod command_code;
 pub mod openrouter;
 
-use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime};
@@ -200,11 +199,6 @@ fn leaf(v: &Value) -> String {
         }
         other => other.to_string(),
     }
-}
-
-/// 使用者家目錄
-pub fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("USERPROFILE").map(PathBuf::from)
 }
 
 /// 讀取 JSON 檔；檔案不存在或無法解析時視為未登入

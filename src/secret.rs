@@ -12,7 +12,8 @@ use windows::Win32::Security::Cryptography::{
     CRYPT_INTEGER_BLOB, CRYPTPROTECT_UI_FORBIDDEN, CryptProtectData, CryptUnprotectData,
 };
 
-use crate::config::{app_dir, write_atomic_bytes};
+use crate::config::write_atomic_bytes;
+use crate::platform::app_dir;
 
 const FILE_NAME: &str = "secrets.bin";
 
