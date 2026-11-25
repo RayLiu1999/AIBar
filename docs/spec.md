@@ -120,7 +120,7 @@ Claude、Codex、Command Code 借用 CLI 已登入的憑證，Antigravity 探測
 **Claude 回應解析**
 
 - 優先解析 `limits` 陣列，每筆為一個額度視窗：`kind`（`session`、`weekly_all`、`weekly_scoped`…）、`percent`、`resets_at`（ISO 8601）、`scope.model.display_name`。
-- 視窗名稱：`session` →「5 小時」、`weekly_all` →「每週」、`weekly_scoped` →「每週・{display_name}」；未知的 `kind` 仍顯示，名稱用 `kind` 原字串。
+- 視窗名稱：`session` →「5 小時」、`weekly_all` →「每週」、`weekly_scoped` →「每週 · {display_name}」；未知的 `kind` 仍顯示，名稱用 `kind` 原字串。
 - `limits` 不存在時，退回解析舊欄位 `five_hour`、`seven_day`（`utilization`、`resets_at`）；兩者皆無法解析才視為「回應格式改變」。
 - 其餘欄位（`spend`、`extra_usage`、各種代號欄位）忽略。
 
@@ -140,7 +140,7 @@ Claude、Codex、Command Code 借用 CLI 已登入的憑證，Antigravity 探測
 - 以 ToolHelp 列舉行程，找出 `language_server*.exe` 且命令列含 `antigravity` 者；以 `NtQueryInformationProcess(ProcessCommandLineInformation)` 讀命令列，取出 `--csrf_token`（必須）、`--extension_server_port`、`--extension_server_csrf_token`。IDE 擴充套件內的 server（`--app_data_dir antigravity-ide`）優先順序較低。
 - 以 `GetExtendedTcpTable`（擁有者 PID、只取 LISTEN）列出該行程在聽的連接埠，逐一 `POST https://127.0.0.1:<port>/exa.language_server_pb.LanguageServerService/GetUnleashData`，第一個 200 即為目標；都不通時改用 `http://127.0.0.1:<extension_server_port>`。
 - header：`X-Codeium-Csrf-Token: <token>`、`Connect-Protocol-Version: 1`；body：`{"metadata":{"ideName":"antigravity","extensionName":"antigravity","locale":"en","ideVersion":"unknown"}}`。憑證為自簽，**只對 127.0.0.1 停用驗證**（另一個 HTTP agent，拒絕非本機網址）。
-- 額度優先取 `RetrieveUserQuotaSummary`：`response.groups[].buckets[]` 的 `remainingFraction`、`resetTime`、`window`（`"5h"`／`"weekly"`）。通用名稱（「Weekly Limit Remaining」）改為「{組名}・5 小時／每週」，組名去掉結尾的「Models」；有專屬名稱的（例：「Gemini 4 Argon Weekly」）照原名。後備為 `GetUserStatus` 的 `clientModelConfigs[].quotaInfo`，分成 Gemini 與 Claude + GPT 兩組取剩最少者。
+- 額度優先取 `RetrieveUserQuotaSummary`：`response.groups[].buckets[]` 的 `remainingFraction`、`resetTime`、`window`（`"5h"`／`"weekly"`）。通用名稱（「Weekly Limit Remaining」）改為「{組名} · 5 小時／每週」，組名去掉結尾的「Models」；有專屬名稱的（例：「Gemini 4 Argon Weekly」）照原名。後備為 `GetUserStatus` 的 `clientModelConfigs[].quotaInfo`，分成 Gemini 與 Claude + GPT 兩組取剩最少者。
 - App 沒開（或問不到）時，若有安裝 agy CLI，改執行 `agy -p /usage --output-format json --print-timeout 90s` 取得非互動的用量報告：`{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[…]}}}`，`data` 與 `RetrieveUserQuotaSummary` 同格式但欄位為 snake_case（`name`、`id`、`remaining_fraction`、`reset_time`、`window`）。只讀用量，不送出模型提示、不耗額度。
   - 執行檔：`ANTIGRAVITY_CLI_PATH`（有設定時只用它）→ `%LOCALAPPDATA%\agy\bin\agy.exe` → PATH 中的 `agy.exe`。
   - 先以 `agy --version` 確認版本 ≥ 1.1.11（更舊的版本可能把 `/usage` 當成提示送給模型）；同一個執行檔只問一次。agy 1.2.2 起本機 HTTPS 服務需要拿不到的 CSRF token，因此只用報告模式。
@@ -213,7 +213,7 @@ pub struct KeySpend {                      // 單一 API key 的花費（美元�
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UsageWindow {
-    pub name: String,                      // 例如「5 小時」「每週」「每週・Fable」
+    pub name: String,                      // 例如「5 小時」「每週」「每週 · Fable」
     pub used_percent: f64,                 // 0.0–100.0
     pub resets_at: Option<SystemTime>,
     pub window_secs: Option<u64>,          // 視窗長度，用於計算進度；推不出來時為 None
@@ -261,7 +261,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 - 剩 10%–29% 時底色轉黃、低於 10% 轉紅；焦點 Provider 為舊快照或沒有快照時外框轉灰、數字變淡（沒有快照顯示「–」）。
 - 焦點 Provider 有失敗原因時右下角疊加「!」警示標記（`NotRunning` 除外）。
 - 以 GDI 依目前 DPI 的小圖示尺寸繪製文字（不縮放點陣），不需另備圖檔。
-- Tooltip 第一行為焦點 Provider 的摘要，例如「Codex・每週 剩 59%・1 天 18 小時後重置」；其後每個啟用 Provider 一行列出各額度視窗剩餘量；最後一行為更新時間。
+- Tooltip 第一行為焦點 Provider 的摘要，例如「Codex · 每週 剩 59% · 1 天 18 小時後重置」；其後每個啟用 Provider 一行列出各額度視窗剩餘量；最後一行為更新時間。
 
 **App 圖示**
 
@@ -285,7 +285,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 - 重置倒數：24 小時內顯示「2 時 13 分後重置」，超過 24 小時顯示「3 天 16 小時後重置」，重置時間已過顯示「已重置」；Provider 頁籤另顯示絕對時間（「今天 01:10」「11/13（五）16:00」）。
 - 金額型 Provider（Command Code、OpenRouter）在卡片標題下顯示「本期已用 $4.33 / $10.00」（OpenRouter 為「帳戶已用」），Provider 頁籤的資訊列另有「費用」一列。
 - 有 Key 花費時，卡片標題下先顯示「此 key 已用 $1.23 · 本月 $0.17」，Provider 頁籤的資訊列另有「Key 花費」一列，並列出今日與本週。不到一分錢時顯示到小數第四位。
-- 有保留重置時，卡片標題下顯示「已存 2 次重置・最快 11/30（一）03:41 到期」（可套用時改為「可套用 N 次重置」）；最快到期的在 3 天內到期時以黃色顯示。Provider 頁籤的資訊列另有「重置」一列，逐次列出到期時間與剩餘時間，最後一行寫套用方式（Codex：撞到上限時在 codex 中輸入 `/usage`；Claude：claude.ai 或桌面版「設定 → 用量」的 Reset for free）。AIBar 只顯示，不替使用者套用。
+- 有保留重置時，卡片標題下顯示「已存 2 次重置 · 最快 11/30（一）03:41 到期」（可套用時改為「可套用 N 次重置」）；最快到期的在 3 天內到期時以黃色顯示。Provider 頁籤的資訊列另有「重置」一列，逐次列出到期時間與剩餘時間，最後一行寫套用方式（Codex：撞到上限時在 codex 中輸入 `/usage`；Claude：claude.ai 或桌面版「設定 → 用量」的 Reset for free）。AIBar 只顯示，不替使用者套用。
 - 「更新於 N 分鐘前」與重置倒數每 30 秒重新計算。
 - 配色跟隨 Windows 深色／淺色模式。
 

@@ -321,7 +321,7 @@ pub fn key_spend_detail(k: &KeySpend) -> String {
 /// 最快到期的重置在這段時間內到期時，以警示色提醒
 const RESET_EXPIRY_SOON: Duration = Duration::from_secs(3 * 86400);
 
-/// 保留重置摘要：「已存 2 次重置・最快 11/20（五）08:00 到期」「可套用 1 次重置（共 2 次）」；
+/// 保留重置摘要：「已存 2 次重置 · 最快 11/20（五）08:00 到期」「可套用 1 次重置（共 2 次）」；
 /// 一次都沒有時為空字串
 pub fn resets_text(r: &ResetBank, now: SystemTime) -> String {
     let left = r.remaining(now);
@@ -335,8 +335,8 @@ pub fn resets_text(r: &ResetBank, now: SystemTime) -> String {
         _ => format!("已存 {n} 次重置"),
     };
     match left[0] {
-        Some(t) if n > 1 => format!("{count}・最快 {} 到期", absolute_time(t, now)),
-        Some(t) => format!("{count}・{} 到期", absolute_time(t, now)),
+        Some(t) if n > 1 => format!("{count} · 最快 {} 到期", absolute_time(t, now)),
+        Some(t) => format!("{count} · {} 到期", absolute_time(t, now)),
         None => count,
     }
 }
@@ -613,13 +613,13 @@ pub fn tray_view(focus: Option<&ProviderStatus>, enabled: &[&ProviderStatus], no
         (Some((w, r)), _) => {
             let reset = reset_text(w, now);
             if reset.is_empty() {
-                format!("{name}・{} 剩 {r:.0}%", w.name)
+                format!("{name} · {} 剩 {r:.0}%", w.name)
             } else {
-                format!("{name}・{} 剩 {r:.0}%・{reset}", w.name)
+                format!("{name} · {} 剩 {r:.0}% · {reset}", w.name)
             }
         }
-        (None, Some(f)) => format!("{name}・{}", failure_text(f, focus.provider_id)),
-        (None, None) => format!("{name}・讀取中"),
+        (None, Some(f)) => format!("{name} · {}", failure_text(f, focus.provider_id)),
+        (None, None) => format!("{name} · 讀取中"),
     }];
     // 其後每個啟用 Provider 一行
     if enabled.len() > 1 {
@@ -631,7 +631,7 @@ pub fn tray_view(focus: Option<&ProviderStatus>, enabled: &[&ProviderStatus], no
                     .iter()
                     .map(|w| format!("{} {:.0}%", w.name, remaining_percent(w, now)))
                     .collect::<Vec<_>>()
-                    .join("・"),
+                    .join("，"),
                 None => "無資料".into(),
             };
             lines.push(format!("{name}　{line}"));
@@ -753,10 +753,10 @@ mod tests {
         // 有到期時間：摘要寫最快到期的那一次
         let b = bank(vec![in_days(20), in_days(10)], None);
         let soonest = absolute_time(in_days(10).unwrap(), now);
-        assert_eq!(resets_text(&b, now), format!("已存 2 次重置・最快 {soonest} 到期"));
+        assert_eq!(resets_text(&b, now), format!("已存 2 次重置 · 最快 {soonest} 到期"));
         assert!(!resets_expiring_soon(&b, now));
         let one = bank(vec![in_days(2)], None);
-        assert!(resets_text(&one, now).starts_with("已存 1 次重置・"));
+        assert!(resets_text(&one, now).starts_with("已存 1 次重置 · "));
         assert!(resets_expiring_soon(&one, now));
 
         // 已過期的不算
@@ -889,7 +889,7 @@ mod tests {
         assert_eq!(t.rim, Some(provider_meta("codex").accent));
         assert_eq!(t.fill, TrayFill::Normal);
         assert!(!t.dim && !t.warn);
-        assert!(t.tooltip.starts_with("Codex・每週 剩 59%"));
+        assert!(t.tooltip.starts_with("Codex · 每週 剩 59%"));
     }
 
     #[test]
@@ -992,7 +992,7 @@ mod tests {
         assert_eq!(focus.group_id, "openrouter#x");
         let t = tray_view(Some(focus), &[&a, &b], now);
         assert_eq!(t.text, "20");
-        assert!(t.tooltip.starts_with("OpenRouter · 工作・儲值餘額 剩 20%"));
+        assert!(t.tooltip.starts_with("OpenRouter · 工作 · 儲值餘額 剩 20%"));
         assert!(t.warn, "另一組失敗也要警示");
         assert!(overview_headline(&[&a, &b], now).contains("OpenRouter · 工作"));
         // 都沒有資料時取第一組

@@ -198,16 +198,16 @@ pub(super) fn parse_summary(v: &Value) -> Option<Vec<UsageWindow>> {
             let display = field(b, &["displayName", "display_name", "name"])
                 .as_str()
                 .unwrap_or_default();
-            // 通用名稱（「Weekly Limit Remaining」等）改用「組名・5 小時／每週」；
+            // 通用名稱（「Weekly Limit Remaining」等）改用「組名 · 5 小時／每週」；
             // 有專屬名稱的（例如某個模型的每週額度）照原名，去掉結尾的「Limit」
             let generic = display.is_empty() || display.contains("Limit Remaining");
             let name = match (generic, window_secs(window).or_else(|| window_secs(id))) {
-                (true, Some(18000)) => format!("{group_name}・5 小時"),
-                (true, Some(_)) => format!("{group_name}・每週"),
+                (true, Some(18000)) => format!("{group_name} · 5 小時"),
+                (true, Some(_)) => format!("{group_name} · 每週"),
                 (true, None) => format!("{group_name} {id}"),
                 (false, _) => display.trim_end_matches(" Limit").to_string(),
             }
-            .trim_start_matches('・')
+            .trim_start_matches(" · ")
             .trim()
             .to_string();
             windows.push(UsageWindow {

@@ -116,7 +116,8 @@ impl From<StoredSnapshot> for Snapshot {
                 .windows
                 .into_iter()
                 .map(|w| UsageWindow {
-                    name: w.name,
+                    // 舊版以「・」分隔
+                    name: w.name.replace('・', " · "),
                     used_percent: w.used_percent,
                     resets_at: w.resets_at.map(from_secs),
                     window_secs: w.window_secs,
@@ -215,6 +216,14 @@ mod tests {
             }),
             resets: ResetBank::new(vec![Some(from_secs(1_795_132_800)), None], Some(0)),
         }
+    }
+
+    #[test]
+    fn 舊版的視窗名稱() {
+        let mut s = sample();
+        s.windows[0].name = "每週・Fable".into();
+        let back = parse(&serialize([("claude", &s)]));
+        assert_eq!(back["claude"].windows[0].name, "每週 · Fable");
     }
 
     #[test]

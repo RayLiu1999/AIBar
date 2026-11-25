@@ -70,7 +70,7 @@ pub struct KeySpend {
 /// 額度視窗：一段計量期間與其用量百分比
 #[derive(Clone, Debug)]
 pub struct UsageWindow {
-    /// 例如「5 小時」「每週」「每週・Fable」
+    /// 例如「5 小時」「每週」「每週 · Fable」
     pub name: String,
     /// 0.0–100.0
     pub used_percent: f64,

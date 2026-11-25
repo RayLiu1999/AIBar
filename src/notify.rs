@@ -28,13 +28,18 @@ pub struct Notifier {
     sent: HashMap<String, usize>,
 }
 
+/// 讀取已通知紀錄；舊版的視窗名稱以「・」分隔，換成現在的寫法以免重複通知
+fn parse(text: &str) -> HashMap<String, usize> {
+    let sent: HashMap<String, usize> = serde_json::from_str(text).unwrap_or_default();
+    sent.into_iter().map(|(k, v)| (k.replace('・', " · "), v)).collect()
+}
+
 impl Notifier {
     pub fn load() -> Self {
-        let sent = app_dir()
-            .and_then(|d| std::fs::read_to_string(d.join(STATE_FILE)).ok())
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default();
-        Self { sent }
+        let text = app_dir().and_then(|d| std::fs::read_to_string(d.join(STATE_FILE)).ok());
+        Self {
+            sent: text.map(|t| parse(&t)).unwrap_or_default(),
+        }
     }
 
     fn save(&self) {
@@ -164,6 +169,13 @@ mod tests {
         let now = UNIX_EPOCH + Duration::from_secs(1_800_000_000);
         let mut n = Notifier::default();
         assert_eq!(check(&mut n, &status(97.0, 3600, now), now).len(), 1);
+    }
+
+    #[test]
+    fn 舊版紀錄的名稱() {
+        let sent = parse(r#"{"claude|每週・Fable|1800003600":1}"#);
+        assert_eq!(sent.get("claude|每週 · Fable|1800003600"), Some(&1));
+        assert!(parse("壞掉").is_empty());
     }
 
     #[test]
