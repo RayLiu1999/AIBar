@@ -425,14 +425,22 @@ AIBar/
     ├── main_window.rs        // 主視窗顯示／隱藏、位置記憶、前景
     ├── tray_icon.rs          // 繪製托盤數字圖示（GDI 文字）與 App 圖示
     ├── icon_art.rs           // 共用繪圖與 App 圖示（build.rs 也引用）
-    ├── platform.rs           // 剪貼簿、開啟網址
     ├── scheduler.rs          // 刷新排程與退避（背景執行緒 + channel）
     ├── config.rs             // config.json 讀寫、首次啟動自動偵測
     ├── snapshot_store.rs     // snapshots.json 讀寫
-    ├── autostart.rs          // 登錄檔 Run 鍵與 StartupApproved
     ├── applog.rs             // 日誌與輪替（log! 巨集）
-    ├── secret.rs             // DPAPI 加解密（OpenRouter API key）
-    ├── notify.rs             // Toast 通知與已通知紀錄
+    ├── secret.rs             // 讀、寫、清除各 Provider 的機密
+    ├── notify.rs             // 通知門檻與已通知紀錄
+    ├── platform/             // 平台功能的唯一入口；依作業系統轉出同名函式
+    │   ├── mod.rs
+    │   └── windows/
+    │       ├── system.rs       // 單一執行個體、剪貼簿、開啟網址
+    │       ├── paths.rs        // AIBar、家目錄、Antigravity、agy 的位置
+    │       ├── autostart.rs    // 登錄檔 Run 鍵與 StartupApproved
+    │       ├── secret_store.rs // secrets.bin 的 DPAPI 加解密
+    │       ├── toast.rs        // Toast 通知與 AUMID
+    │       ├── process.rs      // 行程、命令列與連接埠探測
+    │       └── process_tree.rs // 隱藏主控台、終止整個行程樹（Job Object）
     └── providers/
         ├── mod.rs            // UsageProvider trait
         ├── claude.rs
