@@ -122,6 +122,7 @@ impl UsageProvider for Claude {
             account_hash: account_hash(&org),
             windows,
             credits: None,
+            key_spend: None,
             resets: parse_resets(&body["cedar_ember"], now),
             fetched_at: now,
         })

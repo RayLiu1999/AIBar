@@ -500,6 +500,9 @@ fn probe(only: Option<&str>) {
                         view::reset_text(w, SystemTime::now())
                     );
                 }
+                if let Some(k) = &s.key_spend {
+                    eprintln!("  {} · {}", view::key_spend_text(k), view::key_spend_detail(k));
+                }
                 if let Some(r) = &s.resets {
                     let now = SystemTime::now();
                     eprintln!("  {}", view::resets_text(r, now));

@@ -70,6 +70,7 @@ pub fn fetch(exe: &Path) -> Result<Snapshot, FetchFailure> {
         account_hash: account_hash(""),
         windows: parse_report(&report)?,
         credits: None,
+        key_spend: None,
         resets: None,
         fetched_at: SystemTime::now(),
     })

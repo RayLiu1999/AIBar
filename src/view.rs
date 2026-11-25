@@ -6,7 +6,7 @@ use std::time::{Duration, SystemTime};
 use chrono::{DateTime, Datelike, Local, Timelike, Weekday};
 use slint::{Color, ModelRc, VecModel};
 
-use crate::model::{Credits, FetchFailure, ProviderStatus, ResetBank, Snapshot, UsageWindow};
+use crate::model::{Credits, FetchFailure, KeySpend, ProviderStatus, ResetBank, Snapshot, UsageWindow};
 use crate::{CardData, TabData, UsageLevel, WindowRow};
 
 /// 快照年齡超過此數個背景刷新間隔即為舊快照
@@ -280,13 +280,42 @@ fn failure_text_generic(f: &FetchFailure, cli: &str) -> String {
     }
 }
 
-/// 金額型額度文字：「本期已用 $4.33 / $10.00」；上限 0 表示無上限
-pub fn credits_text(c: &Credits) -> String {
+/// 金額型額度文字：「本期已用 $4.33 / $10.00」；上限 0 表示無上限。
+/// OpenRouter 的是整個帳戶的儲值，寫成「帳戶已用」以便和 Key 花費區分
+pub fn credits_text(c: &Credits, provider_id: &str) -> String {
+    let label = if provider_id == "openrouter" {
+        "帳戶已用"
+    } else {
+        "本期已用"
+    };
     if c.limit > 0.0 {
-        format!("本期已用 ${:.2} / ${:.2}", c.used, c.limit)
+        format!("{label} ${:.2} / ${:.2}", c.used, c.limit)
     } else {
         format!("本月已用 ${:.2}（無上限）", c.used)
     }
+}
+
+/// 金額：「$1.23」；不到一分錢時多顯示幾位，避免看起來像沒用過
+fn usd(v: f64) -> String {
+    if v <= 0.0 {
+        "$0.00".into()
+    } else if v < 0.0001 {
+        "<$0.0001".into()
+    } else if v < 0.01 {
+        format!("${v:.4}")
+    } else {
+        format!("${v:.2}")
+    }
+}
+
+/// Key 花費摘要：「此 key 已用 $1.23 · 本月 $0.17」
+pub fn key_spend_text(k: &KeySpend) -> String {
+    format!("此 key 已用 {} · 本月 {}", usd(k.total), usd(k.month))
+}
+
+/// Key 花費明細（Provider 頁籤）
+pub fn key_spend_detail(k: &KeySpend) -> String {
+    format!("今日 {} · 本週 {}（UTC）", usd(k.day), usd(k.week))
 }
 
 /// 最快到期的重置在這段時間內到期時，以警示色提醒
@@ -421,6 +450,7 @@ pub fn card(s: &ProviderStatus, mode: DisplayMode, now: SystemTime) -> CardData 
     let meta = provider_meta(s.provider_id);
     let snap = s.snapshot.as_ref();
     let resets = snap.and_then(|sn| sn.resets.as_ref());
+    let spend = snap.and_then(|sn| sn.key_spend.as_ref());
     let rows: Vec<WindowRow> = snap
         .map(|sn| sn.windows.iter().map(|w| row(w, mode, now)).collect())
         .unwrap_or_default();
@@ -463,9 +493,11 @@ pub fn card(s: &ProviderStatus, mode: DisplayMode, now: SystemTime) -> CardData 
         failure_cmd: failure_cmd.into(),
         credits_text: snap
             .and_then(|sn| sn.credits.as_ref())
-            .map(credits_text)
+            .map(|c| credits_text(c, s.provider_id))
             .unwrap_or_default()
             .into(),
+        spend_text: spend.map(key_spend_text).unwrap_or_default().into(),
+        spend_detail: spend.map(key_spend_detail).unwrap_or_default().into(),
         resets_text: resets.map(|r| resets_text(r, now)).unwrap_or_default().into(),
         resets_detail: resets
             .map(|r| resets_detail(r, s.provider_id, now))
@@ -626,6 +658,7 @@ mod tests {
             account_hash: String::new(),
             windows,
             credits: None,
+            key_spend: None,
             resets: None,
             fetched_at: now - Duration::from_secs(age_secs),
         }
@@ -649,16 +682,35 @@ mod tests {
         assert!(failure_text(&FetchFailure::TokenExpired, "codex").contains("codex"));
         assert!(failure_text(&FetchFailure::NotRunning, "antigravity").contains("未執行"));
         assert_eq!(
-            credits_text(&Credits {
-                used: 4.333,
-                limit: 10.0
-            }),
+            credits_text(
+                &Credits {
+                    used: 4.333,
+                    limit: 10.0
+                },
+                "commandcode"
+            ),
             "本期已用 $4.33 / $10.00"
         );
         assert_eq!(
-            credits_text(&Credits { used: 3.2, limit: 0.0 }),
+            credits_text(&Credits { used: 3.2, limit: 0.0 }, "commandcode"),
             "本月已用 $3.20（無上限）"
         );
+        assert_eq!(
+            credits_text(&Credits { used: 0.2, limit: 5.0 }, "openrouter"),
+            "帳戶已用 $0.20 / $5.00"
+        );
+    }
+
+    #[test]
+    fn key_花費文字() {
+        let k = KeySpend {
+            total: 1.234,
+            month: 0.0042,
+            week: 0.00001,
+            day: 0.0,
+        };
+        assert_eq!(key_spend_text(&k), "此 key 已用 $1.23 · 本月 $0.0042");
+        assert_eq!(key_spend_detail(&k), "今日 $0.00 · 本週 <$0.0001（UTC）");
     }
 
     #[test]

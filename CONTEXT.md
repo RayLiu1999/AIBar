@@ -52,6 +52,10 @@ _Avoid_: 目前 Provider、主要 Provider
 以美元計的額度（本期已用與上限），例如 Command Code 的月額度、OpenRouter 的儲值餘額；與額度視窗並存顯示。
 _Avoid_: 點數、餘額（「餘額」只用於 OpenRouter 的儲值）
 
+**Key 花費**：
+單一 API key 自己花掉的金額（累計、今日、本週、本月），例如 OpenRouter 每把 key 的花費。與金額型額度不同：後者屬於整個帳戶，同帳戶的多把 key 看到的是同一個數字。
+_Avoid_: key 用量、key 額度
+
 **保留重置**：
 服務發給使用者、可先存起來、需要時再手動套用的額度重置。Codex 在 CLI 輸入 `/usage` 套用；Claude 在 claude.ai 或桌面版「設定 → 用量」按 Reset for free 套用。每一次各有自己的到期時間；分成「已存」的次數與此刻「可套用」的次數（Codex 沒撞到上限時通常無法套用）。
 _Avoid_: 重置點數、reset credits

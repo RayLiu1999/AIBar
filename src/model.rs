@@ -12,6 +12,8 @@ pub struct Snapshot {
     pub windows: Vec<UsageWindow>,
     /// 以金額計的額度（Command Code、OpenRouter）；沒有時為 None
     pub credits: Option<Credits>,
+    /// 這把 API key 自己的花費（OpenRouter）；沒有時為 None
+    pub key_spend: Option<KeySpend>,
     /// 保留重置（Claude、Codex）；服務沒有提供或一次都沒有時為 None
     pub resets: Option<ResetBank>,
     pub fetched_at: SystemTime,
@@ -52,6 +54,15 @@ impl ResetBank {
 pub struct Credits {
     pub used: f64,
     pub limit: f64,
+}
+
+/// Key 花費：單一 API key 花掉的金額（美元）。今日、本週（週一起）、本月以 UTC 計
+#[derive(Clone, Debug, PartialEq)]
+pub struct KeySpend {
+    pub total: f64,
+    pub month: f64,
+    pub week: f64,
+    pub day: f64,
 }
 
 /// 額度視窗：一段計量期間與其用量百分比

@@ -380,6 +380,7 @@ mod tests {
                     window_secs: None,
                 }],
                 credits: None,
+                key_spend: None,
                 resets: None,
                 fetched_at: SystemTime::now(),
             })

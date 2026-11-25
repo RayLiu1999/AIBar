@@ -31,6 +31,8 @@ export struct CardData {
     notice: string,        // 非錯誤的提示（例如 Antigravity 未執行）
     failure-cmd: string,   // 可複製的修復指令（例如 claude）；空字串表示沒有
     credits-text: string,  // 金額型額度：「本期已用 $4.33 / $10.00」
+    spend-text: string,    // Key 花費：「此 key 已用 $1.23 · 本月 $0.17」；空字串表示沒有
+    spend-detail: string,  // Key 花費明細：「今日 $0.01 · 本週 $0.05（UTC）」
     resets-text: string,   // 保留重置摘要：「已存 2 次重置・最快 11/20（五）08:00 到期」；空字串表示沒有
     resets-detail: string, // 保留重置明細：每次一行到期時間，最後一行是套用方式
     resets-soon: bool,     // 最快到期的重置快到期了
@@ -457,10 +459,18 @@ component ProviderCard inherits Rectangle {
             }
         }
 
-        if root.data.credits-text != "": Text {
-            text: root.data.credits-text;
-            font-size: 12px;
-            color: Theme.subtext;
+        if root.data.spend-text != "" || root.data.credits-text != "": VerticalLayout {
+            spacing: 3px;
+            if root.data.spend-text != "": Text {
+                text: root.data.spend-text;
+                font-size: 12px;
+                color: Theme.subtext;
+            }
+            if root.data.credits-text != "": Text {
+                text: root.data.credits-text;
+                font-size: 12px;
+                color: Theme.subtext;
+            }
         }
 
         if root.data.resets-text != "": Text {
@@ -627,6 +637,26 @@ component ProviderDetail inherits VerticalLayout {
                 font-size: 13px;
                 color: Theme.text;
                 horizontal-stretch: 1;
+            }
+        }
+        if root.data.spend-text != "": Row {
+            Text {
+                text: "Key 花費";
+                font-size: 13px;
+                color: Theme.subtext;
+            }
+            VerticalLayout {
+                spacing: 2px;
+                Text {
+                    text: root.data.spend-text;
+                    font-size: 13px;
+                    color: Theme.text;
+                }
+                Text {
+                    text: root.data.spend-detail;
+                    font-size: 12px;
+                    color: Theme.subtext;
+                }
             }
         }
         if root.data.credits-text != "": Row {

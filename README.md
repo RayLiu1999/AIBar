@@ -22,7 +22,7 @@ Windows 系統匣與 macOS 選單列的 AI 訂閱用量小工具。不用開網�
 | Codex（訂閱） | 5 小時、每週，與保留重置次數及到期時間 | Codex CLI 的登入憑證 `~/.codex/auth.json` |
 | Antigravity | 各模型組的 5 小時、每週 | 執行中的 Antigravity App（本機 language server，不連外網）；App 沒開時改用已登入的 agy CLI |
 | Command Code | 5 小時、每週、每月，與本期花費 | Command Code CLI 的登入憑證 `~/.commandcode/auth.json` |
-| OpenRouter | Key 的花費上限、儲值餘額；可設定多組並命名 | 在設定視窗貼上的 API key（Windows 以 DPAPI 加密，macOS 存在 Keychain） |
+| OpenRouter | 每把 key 的花費與上限、帳戶儲值餘額；可設定多組並命名 | 在設定視窗貼上的 API key（Windows 以 DPAPI 加密，macOS 存在 Keychain） |
 
 只要對應的 CLI 登入過一次，第一次啟動時就會自動啟用該服務。Token 過期時 AIBar **不會**自行換發（避免把你的 CLI 登出），只會提示你在終端機執行一次對應的 CLI。
 

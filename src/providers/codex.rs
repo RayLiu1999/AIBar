@@ -93,6 +93,7 @@ impl UsageProvider for Codex {
             account_hash: account_hash(account_id),
             windows,
             credits: None,
+            key_spend: None,
             resets,
             fetched_at: now,
         })

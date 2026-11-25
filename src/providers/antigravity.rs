@@ -117,6 +117,7 @@ fn fetch_from(server: &Server) -> Result<Snapshot, FetchFailure> {
             account_hash: account_hash(email),
             windows,
             credits: None,
+            key_spend: None,
             resets: None,
             fetched_at: SystemTime::now(),
         });

@@ -75,6 +75,7 @@ impl UsageProvider for CommandCode {
             account_hash: account_hash(user),
             windows: parsed.windows,
             credits: parsed.credits,
+            key_spend: None,
             resets: None,
             fetched_at: SystemTime::now(),
         })

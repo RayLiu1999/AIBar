@@ -159,7 +159,8 @@ Claude、Codex、Command Code 借用 CLI 已登入的憑證，Antigravity 探測
 **OpenRouter 回應解析**
 
 - `/api/v1/key` 的 `data.limit`（美元）有值時，顯示一個額度視窗：名稱依 `limit_reset`（`daily`／`weekly`／`monthly` →「每日上限／每週上限／每月上限」，null →「Key 上限」），已用 = (`limit` − `limit_remaining`) / `limit`；重置時間依 UTC 午夜、週一、每月 1 日推算。
-- `/api/v1/credits` 的 `data.total_credits`、`total_usage` 取得到時，顯示「儲值餘額」視窗（無重置）與「本期已用 $x / $y」；取不到（部分 key 沒有權限）時只顯示 `usage_monthly`（「本月已用 $x（無上限）」）。
+- `/api/v1/credits` 的 `data.total_credits`、`total_usage` 取得到時，顯示「儲值餘額」視窗（無重置）與「帳戶已用 $x / $y」；取不到（部分 key 沒有權限）時不顯示。這兩個數字屬於整個帳戶，同帳戶的每把 key 都相同。
+- `/api/v1/key` 的 `data.usage`、`usage_daily`、`usage_weekly`、`usage_monthly` 為此 key 自己的花費（Key 花費；週為週一起算，皆以 UTC 計，不含 BYOK），顯示「此 key 已用 $x · 本月 $y」；缺任何一項時不顯示。
 - 401／403 視為 key 無效，提示到設定重新輸入。
 
 **共通規則**
@@ -192,6 +193,7 @@ pub struct Snapshot {
     pub account_hash: String,              // 帳號識別的雜湊，不存原始 id
     pub windows: Vec<UsageWindow>,
     pub credits: Option<Credits>,          // 金額型額度（Command Code、OpenRouter）
+    pub key_spend: Option<KeySpend>,       // Key 花費（OpenRouter）
     pub resets: Option<ResetBank>,         // 保留重置：每一次的到期時間（最快的在前）、此刻可套用次數（Codex）
     pub fetched_at: SystemTime,
 }
@@ -199,6 +201,13 @@ pub struct Snapshot {
 pub struct Credits {
     pub used: f64,                         // 本期已用（美元）
     pub limit: f64,                        // 上限（美元）；0 表示無上限
+}
+
+pub struct KeySpend {                      // 單一 API key 的花費（美元，UTC）
+    pub total: f64,
+    pub month: f64,
+    pub week: f64,
+    pub day: f64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -273,7 +282,8 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 - **額度視窗**：第一行為名稱、「剩餘 72%」（或「已使用 28%」，依設定）與重置倒數；第二行為進度條，長度代表所選顯示方式的量，顏色平常為 Provider 代表色，剩 10%–29% 轉黃、低於 10% 轉紅；第三行為進度說明。
 - **進度刻度**：可推得視窗長度時（Codex 的 `limit_window_seconds`；Claude 的 `session` 5 小時、`weekly_*` 7 天），進度條上以白色刻度標出「依時間比例此刻應剩的量」，第三行寫「比預期少用 N% · 可撐到重置」或「比預期多用 N% · 約 X 後用完」（以目前平均速度推算用完時間，早於重置才顯示）。推不出視窗長度時不顯示刻度與說明。
 - 重置倒數：24 小時內顯示「2 時 13 分後重置」，超過 24 小時顯示「3 天 16 小時後重置」，重置時間已過顯示「已重置」；Provider 頁籤另顯示絕對時間（「今天 01:10」「11/13（五）16:00」）。
-- 金額型 Provider（Command Code、OpenRouter）在卡片標題下顯示「本期已用 $4.33 / $10.00」，Provider 頁籤的資訊列另有「費用」一列。
+- 金額型 Provider（Command Code、OpenRouter）在卡片標題下顯示「本期已用 $4.33 / $10.00」（OpenRouter 為「帳戶已用」），Provider 頁籤的資訊列另有「費用」一列。
+- 有 Key 花費時，卡片標題下先顯示「此 key 已用 $1.23 · 本月 $0.17」，Provider 頁籤的資訊列另有「Key 花費」一列，並列出今日與本週。不到一分錢時顯示到小數第四位。
 - 有保留重置時，卡片標題下顯示「已存 2 次重置・最快 11/30（一）03:41 到期」（可套用時改為「可套用 N 次重置」）；最快到期的在 3 天內到期時以黃色顯示。Provider 頁籤的資訊列另有「重置」一列，逐次列出到期時間與剩餘時間，最後一行寫套用方式（Codex：撞到上限時在 codex 中輸入 `/usage`；Claude：claude.ai 或桌面版「設定 → 用量」的 Reset for free）。AIBar 只顯示，不替使用者套用。
 - 「更新於 N 分鐘前」與重置倒數每 30 秒重新計算。
 - 配色跟隨 Windows 深色／淺色模式。
