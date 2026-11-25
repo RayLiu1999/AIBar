@@ -121,14 +121,24 @@ impl MainWindowHost {
             });
             let w = weak.clone();
             window.window().on_winit_window_event(move |_, event| {
-                if matches!(event, WindowEvent::Focused(false)) {
-                    // 不在事件處理當中隱藏視窗
+                // 不在事件處理當中改變視窗
+                let defer = |f: fn(&Self)| {
                     let w = w.clone();
                     slint::Timer::single_shot(Duration::ZERO, move || {
                         if let Some(host) = w.upgrade() {
-                            host.hide();
+                            f(&host);
                         }
                     });
+                };
+                match event {
+                    WindowEvent::Focused(false) => defer(|host| host.hide()),
+                    // Slint 1.18.1 收到這個事件會查詢視窗是否最大化，而 winit 0.30 查詢無邊框視窗時
+                    // 會暫時加上標題列：面板貼著選單列，系統因此把它往下推 32pt 且不會推回。
+                    // 面板不能最小化或最大化，軟體渲染器也只用它重畫，不需要這個事件。
+                    WindowEvent::Occluded(_) => return EventResult::PreventDefault,
+                    // 同樣會觸發查詢，但 Slint 需要它來調整大小（例如換到縮放比例不同的螢幕）：事後校正位置
+                    WindowEvent::Resized(_) => defer(|host| host.reposition()),
+                    _ => {}
                 }
                 EventResult::Propagate
             });
@@ -214,6 +224,15 @@ impl MainWindowHost {
             item.cancel_session();
         }
         return_focus();
+    }
+
+    /// 面板開著時重新定位
+    fn reposition(&self) {
+        if self.window.window().is_visible()
+            && let Some(window) = ns_window(self.window.window())
+        {
+            self.place(&window);
+        }
     }
 
     /// 置於圖示正下方並水平置中，不超出圖示所在的螢幕
