@@ -24,6 +24,8 @@ slint = { version = "1.18.1", default-features = false, features = [
 ] }
 # 同步 HTTP；TLS 用 Windows 內建的 SChannel 與系統憑證，不另外打包根憑證
 ureq = { version = "3.5.1", default-features = false, features = ["native-tls-no-default", "gzip"] }
+
+[target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
