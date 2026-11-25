@@ -2,6 +2,7 @@
 
 pub mod autostart;
 mod paths;
+pub mod secret_store;
 mod system;
 
 pub use paths::{app_dir, home_dir};
