@@ -8,32 +8,24 @@
 //! - 1.1.11 以前沒有非互動的用量報告，`/usage` 可能被當成提示送給模型，一律不執行。
 //! - 執行檔：`ANTIGRAVITY_CLI_PATH`（有設定時只用它）→ 預設安裝資料夾 → PATH。
 //! - 環境：`AGY_CLI_DISABLE_AUTO_UPDATE=true`（不觸發自動更新）、`BROWSER` 指向不存在的程式（不跳出瀏覽器登入）。
-//! - 不顯示主控台視窗；行程樹放進 Job Object，結束或逾時時一併終止（agy 會啟動自己的 language server）。
+//! - 不顯示主控台視窗；結束或逾時時終止整個行程樹（agy 會啟動自己的 language server）。
 //! - 工作目錄為 `%TEMP%\AiBar-agy`；輸出上限 1 MB、逾時 100 秒。
 //!
 //! 做法參考 CodexBar 的 Antigravity 文件與實作。
 
 use std::io::Read;
-use std::os::windows::io::AsRawHandle;
-use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::Value;
-use windows::Win32::Foundation::{CloseHandle, HANDLE};
-use windows::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation, SetInformationJobObject,
-};
-use windows::core::PCWSTR;
 
 use super::{PROBE, account_hash, antigravity::parse_summary, print_shape};
 use crate::model::{FetchFailure, Snapshot};
+use crate::platform::process_tree::{self, ProcessTree};
 use crate::platform::{AGY_EXE, agy_dirs};
 
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// 第一個有非互動用量報告的版本
 const MIN_VERSION: (u32, u32, u32) = (1, 1, 11);
 const REPORT_TIMEOUT: Duration = Duration::from_secs(100);
@@ -129,7 +121,8 @@ fn run(exe: &Path, args: &[&str], timeout: Duration) -> Result<Vec<u8>, FetchFai
     let dir = std::env::temp_dir().join("AiBar-agy");
     let _ = std::fs::create_dir_all(&dir);
     let started = Instant::now();
-    let mut child = Command::new(exe)
+    let mut command = Command::new(exe);
+    command
         .args(args)
         .current_dir(&dir)
         .env("AGY_CLI_DISABLE_AUTO_UPDATE", "true")
@@ -137,14 +130,12 @@ fn run(exe: &Path, args: &[&str], timeout: Duration) -> Result<Vec<u8>, FetchFai
         .env_remove("ELECTRON_RUN_AS_NODE")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .creation_flags(CREATE_NO_WINDOW)
-        .spawn()
-        .map_err(|e| {
-            log!("[antigravity] 無法執行 agy：{e}");
-            FetchFailure::Network
-        })?;
-    let job = Job::for_child(&child);
+        .stderr(Stdio::null());
+    let mut child = process_tree::prepare(&mut command).spawn().map_err(|e| {
+        log!("[antigravity] 無法執行 agy：{e}");
+        FetchFailure::Network
+    })?;
+    let tree = ProcessTree::attach(&child);
 
     let mut stdout = child.stdout.take().ok_or(FetchFailure::Network)?;
     let reader = std::thread::spawn(move || {
@@ -164,8 +155,8 @@ fn run(exe: &Path, args: &[&str], timeout: Duration) -> Result<Vec<u8>, FetchFai
             }
         }
     };
-    // 關閉 Job 會終止 agy 留下的子行程，stdout 的管線也隨之關閉
-    drop(job);
+    // 終止 agy 留下的子行程，stdout 的管線也隨之關閉
+    drop(tree);
     let out = reader.join().unwrap_or_default();
     log!(
         "[antigravity] agy {}：{}，{} ms",
@@ -174,36 +165,6 @@ fn run(exe: &Path, args: &[&str], timeout: Duration) -> Result<Vec<u8>, FetchFai
         started.elapsed().as_millis()
     );
     status.map(|_| out).ok_or(FetchFailure::Network)
-}
-
-/// 關閉時終止所有成員行程的 Job Object
-struct Job(HANDLE);
-
-impl Job {
-    fn for_child(child: &Child) -> Option<Job> {
-        unsafe {
-            let job = Job(CreateJobObjectW(None, PCWSTR::null()).ok()?);
-            let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-            SetInformationJobObject(
-                job.0,
-                JobObjectExtendedLimitInformation,
-                &info as *const _ as *const core::ffi::c_void,
-                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            )
-            .ok()?;
-            AssignProcessToJobObject(job.0, HANDLE(child.as_raw_handle())).ok()?;
-            Some(job)
-        }
-    }
-}
-
-impl Drop for Job {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = CloseHandle(self.0);
-        }
-    }
 }
 
 #[cfg(test)]
