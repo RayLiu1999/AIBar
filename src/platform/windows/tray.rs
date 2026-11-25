@@ -2,9 +2,9 @@
 
 use std::rc::Rc;
 
+use super::main_window::MainWindowHost;
 use super::tray_icon;
 use crate::Tray;
-use crate::main_window::MainWindowHost;
 use crate::platform::TrayActions;
 use crate::view::TrayView;
 

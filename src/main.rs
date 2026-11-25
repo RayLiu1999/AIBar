@@ -10,7 +10,6 @@
 mod applog;
 mod config;
 mod icon_art;
-mod main_window;
 mod model;
 mod notify;
 mod platform;
@@ -28,9 +27,8 @@ use std::time::{Duration, SystemTime};
 use slint::{ComponentHandle, ModelRc, VecModel};
 
 use config::{Config, OverviewLayout};
-use main_window::MainWindowHost;
 use model::ProviderStatus;
-use platform::{TrayActions, TrayHost};
+use platform::{MainWindowHost, TrayActions, TrayHost};
 use scheduler::Scheduler;
 use view::DisplayMode;
 
@@ -269,13 +267,7 @@ impl App {
                 w.set_page(page);
             }
             let _ = w.show();
-            // 底層視窗要到下一輪事件迴圈才建立，第一次開啟時立刻設定圖示會沒有效果
-            let weak = w.as_weak();
-            slint::Timer::single_shot(main_window::FOCUS_DELAY, move || {
-                if let Some(w) = weak.upgrade() {
-                    platform::apply_app_icon(w.window());
-                }
-            });
+            platform::after_show(w);
         }
     }
 }

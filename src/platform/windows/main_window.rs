@@ -16,8 +16,8 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, SetForegroundWindow};
 
+use super::tray_icon;
 use crate::config::WindowGeometry;
-use crate::platform;
 use crate::{CardData, MainWindow};
 
 /// 第一次開啟時的視窗大小（邏輯像素，需與 main_window.slint 的 preferred 尺寸一致）
@@ -34,7 +34,7 @@ const SCROLLBAR_W: f32 = 16.0;
 /// 點托盤會讓視窗先失焦；這段時間內失焦的視窗，仍視為點擊當下在最前面
 const FOCUS_GRACE: Duration = Duration::from_millis(400);
 /// 視窗顯示後延遲這麼久再搶前景（視窗要到下一輪事件迴圈才真正出現）
-pub const FOCUS_DELAY: Duration = Duration::from_millis(30);
+const FOCUS_DELAY: Duration = Duration::from_millis(30);
 
 /// 點所在（或最近的）螢幕的工作區（實體像素）與縮放比例
 fn work_area(p: POINT) -> Option<(RECT, f32)> {
@@ -86,6 +86,17 @@ fn bring_to_front(window: &slint::Window) {
         let hwnd = HWND(h.hwnd.get() as *mut core::ffi::c_void);
         if !unsafe { SetForegroundWindow(hwnd) }.as_bool() {
             log!("[視窗] 無法取得前景焦點");
+        }
+    });
+}
+
+/// 一般視窗（設定視窗）顯示後的處理：底層視窗要到下一輪事件迴圈才建立，
+/// 第一次開啟時立刻設定圖示會沒有效果
+pub fn after_show<T: ComponentHandle + 'static>(component: &T) {
+    let weak = component.as_weak();
+    slint::Timer::single_shot(FOCUS_DELAY, move || {
+        if let Some(c) = weak.upgrade() {
+            tray_icon::apply_app_icon(c.window());
         }
     });
 }
@@ -256,7 +267,7 @@ impl MainWindowHost {
         let weak = Rc::downgrade(self);
         slint::Timer::single_shot(FOCUS_DELAY, move || {
             if let Some(host) = weak.upgrade() {
-                platform::apply_app_icon(host.window.window());
+                tray_icon::apply_app_icon(host.window.window());
                 bring_to_front(host.window.window());
             }
         });
