@@ -8,7 +8,6 @@
 
 #[macro_use]
 mod applog;
-mod autostart;
 mod config;
 mod icon_art;
 mod main_window;
@@ -196,7 +195,7 @@ impl App {
             DisplayMode::Remaining => 0,
             DisplayMode::Used => 1,
         });
-        w.set_autostart(autostart::is_enabled());
+        w.set_autostart(platform::autostart::is_enabled());
         w.set_notifications(cfg.notifications);
     }
 
@@ -206,7 +205,7 @@ impl App {
                 Ok(w) => {
                     w.set_version(env!("CARGO_PKG_VERSION").into());
                     w.on_autostart_toggled(|on| {
-                        autostart::set_enabled(on);
+                        platform::autostart::set_enabled(on);
                         with_app(|app| app.render_settings())();
                     });
                     w.on_display_changed(|index| {
@@ -360,8 +359,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 正式版：開機自啟已開啟時，把登錄的路徑更新為目前的執行檔（exe 搬過位置也能正確自啟）。
     // 開發版不做，以免把 target\debug 的路徑寫進去。
     #[cfg(not(debug_assertions))]
-    if autostart::is_enabled() {
-        autostart::set_enabled(true);
+    if platform::autostart::is_enabled() {
+        platform::autostart::set_enabled(true);
     }
 
     slint::BackendSelector::new()
