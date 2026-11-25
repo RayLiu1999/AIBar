@@ -217,6 +217,7 @@ pub enum FetchFailure {
     Network,                               // 逾時、連線失敗、5xx
     BadResponse,                           // 回應格式無法解析
     NotRunning,                            // Antigravity 未執行（不算失敗）
+    AccessDenied,                          // Keychain 拒絕存取（macOS）
 }
 
 /// 排程器交給 UI 的每個 Provider 狀態
@@ -295,6 +296,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 | `Network` | 無法連線，下次排程將重試 |
 | `BadResponse` | 回應格式改變 |
 | `NotRunning` | Antigravity 未執行（也找不到 agy CLI），開啟 App 後會自動更新（一般文字，非警示） |
+| `AccessDenied` | 無法讀取 Keychain（存取被拒），按「立即刷新」可重試 |
 
 **右鍵選單**
 
@@ -391,6 +393,7 @@ UI 由托盤圖示、Tooltip、右鍵選單與一個主視窗組成，皆以 Sli
 | 回應格式無法解析 | `BadResponse` | 日誌記錄狀態碼（不含內容） |
 | 回應 429 | `RateLimited` | 該 Provider 退避：間隔加倍，上限 30 分鐘；有 `Retry-After`（秒）且更晚時以它為準；成功後恢復原本的刷新間隔 |
 | Antigravity 行程不存在且沒有 agy CLI | `NotRunning` | 不視為錯誤，不加警示標記 |
+| Keychain 拒絕存取、鎖定或 60 秒內沒有回應（macOS） | `AccessDenied` | 不再自動重試，避免反覆跳出授權視窗；手動刷新或停用後重新啟用才重試 |
 
 所有情況都保留既有快照。
 

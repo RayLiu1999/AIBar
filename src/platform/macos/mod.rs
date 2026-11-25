@@ -1,6 +1,7 @@
 //! macOS 實作（AppKit 與系統內建工具）。
 
 pub mod autostart;
+pub mod claude_keychain;
 mod main_window;
 mod paths;
 pub mod process;

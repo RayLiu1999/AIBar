@@ -272,6 +272,7 @@ fn failure_text_generic(f: &FetchFailure, cli: &str) -> String {
         FetchFailure::Network => "無法連線，下次排程將重試".into(),
         FetchFailure::BadResponse => "回應格式改變".into(),
         FetchFailure::NotRunning => "Antigravity 未執行（也找不到 agy CLI），開啟 App 後會自動更新".into(),
+        FetchFailure::AccessDenied => "無法讀取 Keychain（存取被拒），按「立即刷新」可重試".into(),
     }
 }
 

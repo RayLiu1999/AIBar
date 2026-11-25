@@ -70,6 +70,8 @@ struct Slot {
     backoff_until: Option<SystemTime>,
     /// 上次送出請求的時間
     last_attempt: Option<SystemTime>,
+    /// 憑證存取被拒：只接受手動刷新
+    manual_only: bool,
 }
 
 impl Slot {
@@ -118,6 +120,7 @@ pub fn spawn(
                 interval,
                 backoff_until: None,
                 last_attempt: None,
+                manual_only: false,
                 provider: p,
             }
         })
@@ -140,7 +143,7 @@ fn run(mut slots: Vec<Slot>, rx: Receiver<Msg>, tx: Sender<Msg>, on_update: impl
         let now = SystemTime::now();
         let mut changed = false;
         for slot in slots.iter_mut() {
-            if slot.enabled && !slot.status.refreshing && slot.next_due <= now {
+            if slot.enabled && !slot.manual_only && !slot.status.refreshing && slot.next_due <= now {
                 start(slot, &tx);
                 changed = true;
             }
@@ -152,7 +155,7 @@ fn run(mut slots: Vec<Slot>, rx: Receiver<Msg>, tx: Sender<Msg>, on_update: impl
         // 睡到下一個到期時間（最多 MAX_SLEEP），期間處理指令與抓取結果
         let wait = slots
             .iter()
-            .filter(|s| s.enabled && !s.status.refreshing)
+            .filter(|s| s.enabled && !s.manual_only && !s.status.refreshing)
             .filter_map(|s| s.next_due.duration_since(now).ok())
             .min()
             .unwrap_or(MAX_SLEEP)
@@ -175,7 +178,7 @@ fn run(mut slots: Vec<Slot>, rx: Receiver<Msg>, tx: Sender<Msg>, on_update: impl
                 let now = SystemTime::now();
                 for slot in slots.iter_mut().filter(|s| s.enabled && !s.status.refreshing) {
                     let fresh = slot.snapshot_age(now).is_some_and(|age| age < slot.base_interval / 2);
-                    if !slot.in_backoff(now) && !fresh {
+                    if !slot.in_backoff(now) && !slot.manual_only && !fresh {
                         start(slot, &tx);
                     }
                 }
@@ -188,6 +191,10 @@ fn run(mut slots: Vec<Slot>, rx: Receiver<Msg>, tx: Sender<Msg>, on_update: impl
                     // 剛啟用的 Provider 盡快刷新（仍遵守退避）
                     if enable && !slot.enabled && !slot.in_backoff(now) {
                         slot.next_due = now;
+                    }
+                    // 停用後重新啟用視為使用者要求重試
+                    if !enable {
+                        slot.manual_only = false;
                     }
                     slot.enabled = enable;
                 }
@@ -230,6 +237,7 @@ fn start(slot: &mut Slot, tx: &Sender<Msg>) {
 fn finish(slot: &mut Slot, result: Result<Snapshot, FetchFailure>) {
     let now = SystemTime::now();
     slot.status.refreshing = false;
+    slot.manual_only = matches!(result, Err(FetchFailure::AccessDenied));
     match result {
         Ok(mut snapshot) => {
             // 這次的來源沒有方案名稱時（例如 Antigravity 改從 agy CLI 取得），沿用上一份快照的
@@ -259,5 +267,59 @@ fn finish(slot: &mut Slot, result: Result<Snapshot, FetchFailure>) {
             slot.status.last_failure = Some(failure);
             slot.next_due = now + slot.interval;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Fake;
+
+    impl UsageProvider for Fake {
+        fn id(&self) -> &'static str {
+            "claude"
+        }
+        fn credentials_present(&self) -> bool {
+            true
+        }
+        fn current_account_hash(&self) -> Option<String> {
+            None
+        }
+        fn fetch(&self) -> Result<Snapshot, FetchFailure> {
+            Err(FetchFailure::AccessDenied)
+        }
+    }
+
+    #[test]
+    fn 存取被拒後只有手動刷新才重試() {
+        let (done_tx, done_rx) = mpsc::channel();
+        let scheduler = spawn(
+            vec![Arc::new(Fake)],
+            vec!["claude"],
+            HashMap::new(),
+            move |s: Vec<ProviderStatus>| {
+                let _ = done_tx.send((s[0].refreshing, s[0].last_failure.is_some()));
+            },
+        );
+        let wait_denied = || {
+            while done_rx.recv_timeout(Duration::from_secs(5)).expect("應有更新") != (false, true) {}
+        };
+        // 啟動時自動刷新一次
+        wait_denied();
+        // 開啟視窗不重試
+        scheduler.refresh_on_show();
+        assert_eq!(done_rx.recv_timeout(Duration::from_secs(5)).unwrap(), (false, true));
+        assert!(
+            done_rx.recv_timeout(Duration::from_millis(200)).is_err(),
+            "不應再次抓取"
+        );
+        // 停用再啟用視為要求重試
+        scheduler.set_enabled(vec![]);
+        scheduler.set_enabled(vec!["claude"]);
+        let refreshed = std::iter::from_fn(|| done_rx.recv_timeout(Duration::from_secs(5)).ok())
+            .take(4)
+            .any(|(refreshing, _)| refreshing);
+        assert!(refreshed, "應重新抓取");
     }
 }

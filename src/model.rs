@@ -81,6 +81,8 @@ pub enum FetchFailure {
     BadResponse,
     /// Antigravity 未執行
     NotRunning,
+    /// 作業系統的憑證儲存（Keychain）拒絕存取；只有手動刷新才重試，避免反覆跳出授權視窗
+    AccessDenied,
 }
 
 /// 排程器交給 UI 的每個 Provider 狀態

@@ -1,6 +1,7 @@
 //! Windows 實作（Win32 與 WinRT）。
 
 pub mod autostart;
+pub mod claude_keychain;
 mod main_window;
 mod paths;
 pub mod process;
