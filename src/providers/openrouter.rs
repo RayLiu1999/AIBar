@@ -18,7 +18,16 @@ pub const ID: &str = "openrouter";
 const KEY_URL: &str = "https://openrouter.ai/api/v1/key";
 const CREDITS_URL: &str = "https://openrouter.ai/api/v1/credits";
 
-pub struct OpenRouter;
+pub struct OpenRouter {
+    /// 憑證組，也是機密的鍵
+    group: String,
+}
+
+impl OpenRouter {
+    pub fn new(group: &str) -> Self {
+        Self { group: group.into() }
+    }
+}
 
 impl UsageProvider for OpenRouter {
     fn id(&self) -> &'static str {
@@ -26,15 +35,15 @@ impl UsageProvider for OpenRouter {
     }
 
     fn credentials_present(&self) -> bool {
-        secret::has(ID)
+        secret::has(&self.group)
     }
 
     fn current_account_hash(&self) -> Option<String> {
-        secret::get(ID).map(|k| account_hash(&k))
+        secret::get(&self.group).map(|k| account_hash(&k))
     }
 
     fn fetch(&self) -> Result<Snapshot, FetchFailure> {
-        let key = secret::get(ID).ok_or(FetchFailure::NotLoggedIn)?;
+        let key = secret::get(&self.group).ok_or(FetchFailure::NotLoggedIn)?;
         let bearer = format!("Bearer {key}");
         let headers = [("Authorization", bearer.as_str())];
         let key_info = get_json(ID, KEY_URL, &headers)?;

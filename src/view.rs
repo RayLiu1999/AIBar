@@ -7,7 +7,7 @@ use chrono::{DateTime, Datelike, Local, Timelike, Weekday};
 use slint::{Color, ModelRc, VecModel};
 
 use crate::model::{Credits, FetchFailure, ProviderStatus, ResetBank, Snapshot, UsageWindow};
-use crate::{CardData, UsageLevel, WindowRow};
+use crate::{CardData, TabData, UsageLevel, WindowRow};
 
 /// 快照年齡超過此數個背景刷新間隔即為舊快照
 const STALE_CYCLES: u32 = 3;
@@ -380,7 +380,43 @@ fn row(w: &UsageWindow, mode: DisplayMode, now: SystemTime) -> WindowRow {
     }
 }
 
-/// 一個 Provider 的卡片內容（總覽與 Provider 頁籤共用）
+/// Provider 頁籤
+pub fn tab(provider_id: &str) -> TabData {
+    let meta = provider_meta(provider_id);
+    TabData {
+        name: meta.name.into(),
+        accent: color(meta.accent),
+    }
+}
+
+/// 憑證組的標題：「OpenRouter」或「OpenRouter・工作」
+pub fn title(s: &ProviderStatus) -> String {
+    let name = provider_meta(s.provider_id).name;
+    if s.group_name.is_empty() {
+        name.to_string()
+    } else {
+        format!("{name}・{}", s.group_name)
+    }
+}
+
+/// 有需要警示的失敗原因
+pub fn has_warning(s: &ProviderStatus) -> bool {
+    s.last_failure
+        .as_ref()
+        .is_some_and(|f| !matches!(f, FetchFailure::NotRunning))
+}
+
+/// 同一個 Provider 的多組中，代表托盤的那一組：剩餘最少的；都沒有資料時為第一組
+pub fn tightest_group<'a>(groups: &[&'a ProviderStatus], now: SystemTime) -> Option<&'a ProviderStatus> {
+    groups
+        .iter()
+        .filter_map(|s| Some((*s, tightest(s.snapshot.as_ref()?, now)?.1)))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(s, _)| s)
+        .or_else(|| groups.first().copied())
+}
+
+/// 一個憑證組的卡片內容（總覽與 Provider 頁籤共用）
 pub fn card(s: &ProviderStatus, mode: DisplayMode, now: SystemTime) -> CardData {
     let meta = provider_meta(s.provider_id);
     let snap = s.snapshot.as_ref();
@@ -400,8 +436,8 @@ pub fn card(s: &ProviderStatus, mode: DisplayMode, now: SystemTime) -> CardData 
         .map(|d| format!("約 {}後（{}）", duration_text(d), interval_text(s.refresh_interval)))
         .unwrap_or_else(|| interval_text(s.refresh_interval));
     CardData {
-        id: s.provider_id.into(),
-        name: meta.name.into(),
+        id: s.group_id.as_str().into(),
+        name: title(s).into(),
         mono: meta.mono.into(),
         accent: color(meta.accent),
         plan: snap.and_then(|sn| sn.plan.as_deref()).unwrap_or_default().into(),
@@ -449,7 +485,7 @@ pub fn overview_headline(statuses: &[&ProviderStatus], now: SystemTime) -> Strin
         .iter()
         .filter_map(|s| {
             let (w, r) = tightest(s.snapshot.as_ref()?, now)?;
-            Some((provider_meta(s.provider_id).name, w, r))
+            Some((title(s), w, r))
         })
         .min_by(|a, b| a.2.total_cmp(&b.2))
         .map(|(name, w, r)| format!("最先用完：{name} {}，剩 {r:.0}%", w.name))
@@ -492,10 +528,12 @@ pub fn tray_view(focus: Option<&ProviderStatus>, enabled: &[&ProviderStatus], no
         };
     };
     let meta = provider_meta(focus.provider_id);
-    let warn = focus
-        .last_failure
-        .as_ref()
-        .is_some_and(|f| !matches!(f, FetchFailure::NotRunning));
+    let name = title(focus);
+    // 同一個 Provider 的任一組失敗都要看得出來
+    let warn = has_warning(focus)
+        || enabled
+            .iter()
+            .any(|s| s.provider_id == focus.provider_id && has_warning(s));
     let snap = focus.snapshot.as_ref();
     let top = snap.and_then(|s| tightest(s, now));
     let stale = snap.is_none_or(|s| is_stale(s, focus.refresh_interval, now));
@@ -521,18 +559,18 @@ pub fn tray_view(focus: Option<&ProviderStatus>, enabled: &[&ProviderStatus], no
         (Some((w, r)), _) => {
             let reset = reset_text(w, now);
             if reset.is_empty() {
-                format!("{}・{} 剩 {r:.0}%", meta.name, w.name)
+                format!("{name}・{} 剩 {r:.0}%", w.name)
             } else {
-                format!("{}・{} 剩 {r:.0}%・{reset}", meta.name, w.name)
+                format!("{name}・{} 剩 {r:.0}%・{reset}", w.name)
             }
         }
-        (None, Some(f)) => format!("{}・{}", meta.name, failure_text(f, focus.provider_id)),
-        (None, None) => format!("{}・讀取中", meta.name),
+        (None, Some(f)) => format!("{name}・{}", failure_text(f, focus.provider_id)),
+        (None, None) => format!("{name}・讀取中"),
     }];
     // 其後每個啟用 Provider 一行
     if enabled.len() > 1 {
         for s in enabled {
-            let name = provider_meta(s.provider_id).name;
+            let name = title(s);
             let line = match &s.snapshot {
                 Some(sn) => sn
                     .windows
@@ -596,6 +634,8 @@ mod tests {
     fn status(id: &'static str, snap: Option<Snapshot>, fail: Option<FetchFailure>) -> ProviderStatus {
         ProviderStatus {
             provider_id: id,
+            group_id: id.into(),
+            group_name: String::new(),
             snapshot: snap,
             last_failure: fail,
             refreshing: false,
@@ -811,5 +851,34 @@ mod tests {
         assert_eq!(tray_view(Some(&none), &[&none], now).text, "–");
         let off = status("antigravity", None, Some(FetchFailure::NotRunning));
         assert!(!tray_view(Some(&off), &[&off], now).warn);
+    }
+
+    #[test]
+    fn 多組的標題與托盤() {
+        let now = SystemTime::now();
+        let group = |id: &str, name: &str, used: f64, fail| ProviderStatus {
+            group_id: id.into(),
+            group_name: name.into(),
+            ..status(
+                "openrouter",
+                Some(snap(vec![win("儲值餘額", used, None, None, now)], 0, now)),
+                fail,
+            )
+        };
+        let a = group("openrouter", "個人", 30.0, Some(FetchFailure::Network));
+        let b = group("openrouter#x", "工作", 80.0, None);
+        assert_eq!(title(&b), "OpenRouter・工作");
+        assert_eq!(title(&status("openrouter", None, None)), "OpenRouter");
+        let focus = tightest_group(&[&a, &b], now).unwrap();
+        assert_eq!(focus.group_id, "openrouter#x");
+        let t = tray_view(Some(focus), &[&a, &b], now);
+        assert_eq!(t.text, "20");
+        assert!(t.tooltip.starts_with("OpenRouter・工作・儲值餘額 剩 20%"));
+        assert!(t.warn, "另一組失敗也要警示");
+        assert!(overview_headline(&[&a, &b], now).contains("OpenRouter・工作"));
+        // 都沒有資料時取第一組
+        let (c, d) = (status("codex", None, None), status("codex", None, None));
+        assert!(std::ptr::eq(tightest_group(&[&c, &d], now).unwrap(), &c));
+        assert!(tightest_group(&[], now).is_none());
     }
 }

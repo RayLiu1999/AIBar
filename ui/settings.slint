@@ -1,6 +1,15 @@
 // 設定視窗（規格書第 7 節）：左側分類，右側內容；變更立即生效
 import { Palette, Switch, ComboBox, ScrollView, AboutSlint, LineEdit, Button } from "std-widgets.slint";
 
+// 設定視窗中的一個憑證組
+export struct GroupSetting {
+    id: string,
+    name: string,        // 使用者自訂的名稱，可為空
+    title: string,       // 顯示用的標題
+    status: string,      // 「已儲存 · 付費」
+    enabled: bool,
+}
+
 // 設定視窗中的一個 Provider
 export struct ProviderSetting {
     id: string,
@@ -10,8 +19,8 @@ export struct ProviderSetting {
     status: string,      // 「已偵測到 Claude Code 登入 · Pro」
     enabled: bool,
     available: bool,     // 尚未推出的 Provider 不能啟用
-    needs-key: bool,     // 需要在此輸入 API key（OpenRouter）
-    has-key: bool,       // 已存有 API key
+    needs-key: bool,     // 以 API key 設定憑證組（OpenRouter）
+    groups: [GroupSetting],
 }
 
 global SettingsTheme {
@@ -157,6 +166,63 @@ component SmallButton inherits Rectangle {
     }
 }
 
+// 憑證組的編輯表單
+component GroupForm inherits VerticalLayout {
+    in-out property <string> name;
+    in-out property <string> key;
+    in property <string> error;
+    in property <string> key-placeholder;
+    in property <bool> can-save;
+    in property <bool> can-delete;
+    in-out property <bool> confirm-delete;
+
+    callback save();
+    callback delete();
+
+    spacing: 6px;
+
+    LineEdit {
+        text <=> root.name;
+        placeholder-text: "名稱，例如「個人」「工作」";
+        accessible-label: "名稱";
+    }
+    LineEdit {
+        text <=> root.key;
+        input-type: password;
+        placeholder-text: root.key-placeholder;
+        accessible-label: "API key";
+    }
+    if root.error != "": Text {
+        text: root.error;
+        font-size: 12px;
+        color: #E5534B;
+        wrap: word-wrap;
+    }
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: start;
+        Button {
+            text: "儲存";
+            primary: true;
+            enabled: root.can-save;
+            clicked => {
+                root.save();
+            }
+        }
+        // 刪除要按兩次，避免誤刪
+        if root.can-delete: Button {
+            text: root.confirm-delete ? "確定刪除？" : "刪除";
+            clicked => {
+                if (root.confirm-delete) {
+                    root.delete();
+                } else {
+                    root.confirm-delete = true;
+                }
+            }
+        }
+    }
+}
+
 export component SettingsWindow inherits Window {
     // 依平台顯示用語
     in property <bool> macos;
@@ -173,8 +239,26 @@ export component SettingsWindow inherits Window {
     callback display-changed(int);
     callback provider-toggled(string, bool);
     callback provider-moved(string, int);
-    callback key-saved(string, string);
-    callback key-cleared(string);
+    // 儲存憑證組：Provider、組（空字串為新增）、名稱、API key（空字串為不變更）
+    callback group-saved(string, string, string, string);
+    callback group-toggled(string, bool);
+    callback group-deleted(string);
+
+    // 編輯中的組；「Provider#+」為新增，空字串為沒有在編輯。
+    // 輸入內容放在這裡而不放在各列，列重建時才不會消失
+    in-out property <string> editing;
+    in-out property <string> edit-name;
+    in-out property <string> edit-key;
+    in-out property <string> edit-error;
+    private property <bool> confirm-delete;
+
+    public function edit(id: string, name: string) {
+        root.editing = id;
+        root.edit-name = name;
+        root.edit-key = "";
+        root.edit-error = "";
+        root.confirm-delete = false;
+    }
     callback notifications-toggled(bool);
 
     title: "AIBar 設定";
@@ -352,11 +436,11 @@ export component SettingsWindow inherits Window {
                                     wrap: word-wrap;
                                 }
                             }
-                            VerticalLayout {
+                            if !p.needs-key: VerticalLayout {
                                 alignment: center;
                                 Switch {
                                     checked: p.enabled;
-                                    enabled: p.available && (!p.needs-key || p.has-key);
+                                    enabled: p.available;
                                     accessible-label: "啟用 " + p.name;
                                     toggled => {
                                         root.provider-toggled(p.id, self.checked);
@@ -364,30 +448,94 @@ export component SettingsWindow inherits Window {
                                 }
                             }
                         }
-                        // API key 輸入列：只存在本機的加密儲存
-                        if p.needs-key: HorizontalLayout {
+                        // 憑證組：API key 只存在本機的加密儲存
+                        if p.needs-key: VerticalLayout {
                             padding-left: 82px;
                             padding-right: 16px;
                             padding-bottom: 10px;
-                            spacing: 8px;
-                            key-input := LineEdit {
-                                horizontal-stretch: 1;
-                                input-type: password;
-                                placeholder-text: p.has-key ? "已儲存（輸入新的 key 可取代）" : "貼上 API key（sk-or-…）";
-                                accessible-label: p.name + " API key";
-                            }
-                            Button {
-                                text: "儲存";
-                                enabled: key-input.text != "";
-                                clicked => {
-                                    root.key-saved(p.id, key-input.text);
-                                    key-input.text = "";
+                            spacing: 6px;
+                            for g in p.groups: VerticalLayout {
+                                spacing: 6px;
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        horizontal-stretch: 1;
+                                        Text {
+                                            text: g.title;
+                                            font-size: 13px;
+                                            color: SettingsTheme.text;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: g.status;
+                                            font-size: 12px;
+                                            color: SettingsTheme.subtext;
+                                            wrap: word-wrap;
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Button {
+                                            text: root.editing == g.id ? "取消" : "編輯";
+                                            accessible-label: self.text + " " + g.title;
+                                            clicked => {
+                                                if (root.editing == g.id) {
+                                                    root.edit("", "");
+                                                } else {
+                                                    root.edit(g.id, g.name);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Switch {
+                                            checked: g.enabled;
+                                            accessible-label: "啟用 " + g.title;
+                                            toggled => {
+                                                root.group-toggled(g.id, self.checked);
+                                            }
+                                        }
+                                    }
+                                }
+                                if root.editing == g.id: GroupForm {
+                                    name <=> root.edit-name;
+                                    key <=> root.edit-key;
+                                    error: root.edit-error;
+                                    key-placeholder: "已儲存（輸入新的 key 可取代）";
+                                    can-save: true;
+                                    can-delete: true;
+                                    confirm-delete <=> root.confirm-delete;
+                                    save => {
+                                        root.group-saved(p.id, g.id, root.edit-name, root.edit-key);
+                                    }
+                                    delete => {
+                                        root.group-deleted(g.id);
+                                    }
                                 }
                             }
-                            if p.has-key: Button {
-                                text: "清除";
-                                clicked => {
-                                    root.key-cleared(p.id);
+                            if root.editing == p.id + "#+": GroupForm {
+                                name <=> root.edit-name;
+                                key <=> root.edit-key;
+                                error: root.edit-error;
+                                key-placeholder: "貼上 API key（sk-or-…）";
+                                can-save: root.edit-key != "";
+                                save => {
+                                    root.group-saved(p.id, "", root.edit-name, root.edit-key);
+                                }
+                            }
+                            HorizontalLayout {
+                                alignment: start;
+                                Button {
+                                    text: root.editing == p.id + "#+" ? "取消" : "＋ 新增一組";
+                                    clicked => {
+                                        if (root.editing == p.id + "#+") {
+                                            root.edit("", "");
+                                        } else {
+                                            root.edit(p.id + "#+", "");
+                                        }
+                                    }
                                 }
                             }
                         }

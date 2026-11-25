@@ -85,10 +85,23 @@ pub enum FetchFailure {
     AccessDenied,
 }
 
-/// 排程器交給 UI 的每個 Provider 狀態
+/// 憑證組：某個 Provider 底下一份可獨立取得用量的憑證，有使用者自訂的名稱。
+/// 第一組的 id 就是 Provider id（沿用既有的快照、機密與通知紀錄），其餘為「Provider id#識別碼」
+#[derive(Clone, Debug, PartialEq)]
+pub struct GroupSpec {
+    pub provider_id: &'static str,
+    pub id: String,
+    /// 空字串表示未命名
+    pub name: String,
+    pub enabled: bool,
+}
+
+/// 排程器交給 UI 的每個憑證組狀態
 #[derive(Clone, Debug)]
 pub struct ProviderStatus {
     pub provider_id: &'static str,
+    pub group_id: String,
+    pub group_name: String,
     pub snapshot: Option<Snapshot>,
     /// 最近一次刷新成功時為 None
     pub last_failure: Option<FetchFailure>,

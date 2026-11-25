@@ -39,8 +39,16 @@ pub fn all() -> Vec<std::sync::Arc<dyn UsageProvider>> {
         std::sync::Arc::new(codex::Codex),
         std::sync::Arc::new(antigravity::Antigravity),
         std::sync::Arc::new(command_code::CommandCode),
-        std::sync::Arc::new(openrouter::OpenRouter),
+        std::sync::Arc::new(openrouter::OpenRouter::new(openrouter::ID)),
     ]
+}
+
+/// 某個憑證組的 Provider。目前只有 OpenRouter 會因組而異，其餘只有一組
+pub fn for_group(provider_id: &str, group_id: &str) -> Option<std::sync::Arc<dyn UsageProvider>> {
+    if provider_id == openrouter::ID {
+        return Some(std::sync::Arc::new(openrouter::OpenRouter::new(group_id)));
+    }
+    all().into_iter().find(|p| p.id() == provider_id)
 }
 
 /// 每個請求的逾時
