@@ -89,7 +89,7 @@ impl App {
         let enabled: Vec<&ProviderStatus> = statuses.iter().filter(|s| ids.contains(&s.provider_id)).collect();
         for alert in self.notifier.borrow_mut().check(&enabled, SystemTime::now()) {
             log!("[通知] {}", alert.title);
-            notify::show(&alert.title, &alert.body);
+            platform::toast::show(&alert.title, &alert.body);
         }
     }
 
@@ -344,8 +344,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // `--notify-test`：發一則測試通知，確認 Windows 通知設定沒有擋住 AIBar
     if args.iter().any(|a| a == "--notify-test") {
-        notify::init();
-        notify::show("AIBar 測試通知", "看到這則通知表示額度提醒可以正常運作");
+        platform::toast::init();
+        platform::toast::show("AIBar 測試通知", "看到這則通知表示額度提醒可以正常運作");
         std::thread::sleep(Duration::from_secs(1));
         return Ok(());
     }
@@ -355,7 +355,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     log!("AIBar {} 啟動", env!("CARGO_PKG_VERSION"));
-    notify::init();
+    platform::toast::init();
     // 正式版：開機自啟已開啟時，把登錄的路徑更新為目前的執行檔（exe 搬過位置也能正確自啟）。
     // 開發版不做，以免把 target\debug 的路徑寫進去。
     #[cfg(not(debug_assertions))]
