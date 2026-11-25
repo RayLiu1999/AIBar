@@ -15,8 +15,12 @@ concurrency:
 
 jobs:
   check:
-    name: 格式、clippy、測試
-    runs-on: windows-latest
+    name: 格式、clippy、測試（${{ matrix.os }}）
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
