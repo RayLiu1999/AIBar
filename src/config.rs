@@ -128,17 +128,8 @@ fn path() -> Option<PathBuf> {
 }
 
 /// 寫入 `app_dir()` 下的檔案：先寫暫存檔再改名，避免寫到一半當機留下損毀的檔案
-pub fn write_atomic(file_name: &str, contents: &str) -> std::io::Result<()> {
-    let dir = app_dir().ok_or_else(|| std::io::Error::other("找不到 APPDATA"))?;
-    std::fs::create_dir_all(&dir)?;
-    let tmp = dir.join(format!("{file_name}.tmp"));
-    std::fs::write(&tmp, contents)?;
-    std::fs::rename(&tmp, dir.join(file_name))
-}
-
-/// 同 `write_atomic`，寫入二進位內容
-pub fn write_atomic_bytes(file_name: &str, contents: &[u8]) -> std::io::Result<()> {
-    let dir = app_dir().ok_or_else(|| std::io::Error::other("找不到 APPDATA"))?;
+pub fn write_atomic(file_name: &str, contents: impl AsRef<[u8]>) -> std::io::Result<()> {
+    let dir = app_dir().ok_or_else(|| std::io::Error::other("找不到 AIBar 的資料夾"))?;
     std::fs::create_dir_all(&dir)?;
     let tmp = dir.join(format!("{file_name}.tmp"));
     std::fs::write(&tmp, contents)?;

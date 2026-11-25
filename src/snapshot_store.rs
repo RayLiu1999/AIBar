@@ -137,7 +137,7 @@ pub fn load() -> HashMap<String, Snapshot> {
 
 /// 寫入所有快照（整個檔案覆寫）
 pub fn save<'a>(snapshots: impl IntoIterator<Item = (&'a str, &'a Snapshot)>) {
-    if let Err(e) = write_atomic(FILE_NAME, &serialize(snapshots)) {
+    if let Err(e) = write_atomic(FILE_NAME, serialize(snapshots)) {
         log!("[快照] 無法寫入 {FILE_NAME}：{e}");
     }
 }
