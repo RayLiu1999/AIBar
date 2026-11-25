@@ -2,6 +2,7 @@
 
 pub mod autostart;
 mod paths;
+pub mod process;
 pub mod secret_store;
 mod system;
 pub mod toast;
