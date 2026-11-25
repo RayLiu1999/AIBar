@@ -9,6 +9,7 @@
 #[macro_use]
 mod applog;
 mod config;
+#[cfg_attr(target_os = "macos", allow(dead_code))] // 工單 07 完成後移除
 mod icon_art;
 mod model;
 mod notify;
@@ -328,6 +329,7 @@ fn probe(only: Option<&str>) {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    platform::prepare();
     let args: Vec<String> = std::env::args().collect();
     if let Some(i) = args.iter().position(|a| a == "--probe") {
         probe(args.get(i + 1).map(String::as_str));

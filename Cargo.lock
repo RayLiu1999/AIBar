@@ -160,6 +160,7 @@ version = "0.1.3"
 dependencies = [
  "base64",
  "chrono",
+ "libc",
  "serde",
  "serde_json",
  "slint",

@@ -13,5 +13,5 @@ mod tray_icon;
 
 pub use main_window::{MainWindowHost, after_show};
 pub use paths::{AGY_EXE, agy_dirs, antigravity_dir, app_dir, home_dir};
-pub use system::{acquire_single_instance, copy_to_clipboard, open_url};
+pub use system::{acquire_single_instance, copy_to_clipboard, open_url, prepare};
 pub use tray::TrayHost;
